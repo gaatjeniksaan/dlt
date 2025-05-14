@@ -56,6 +56,7 @@ from dlt.common.schema.exceptions import (
     ParentTableNotFoundException,
     SchemaCorruptedException,
     TableIdentifiersFrozen,
+    TableNotFound,
 )
 from dlt.common.schema.normalizers import import_normalizers, configured_normalizers
 from dlt.common.schema.exceptions import DataValidationError
@@ -115,12 +116,17 @@ class Schema:
 
     @classmethod
     def from_dict(
-        cls, d: DictStrAny, remove_processing_hints: bool = False, bump_version: bool = True
+        cls,
+        d: DictStrAny,
+        remove_processing_hints: bool = False,
+        bump_version: bool = True,
+        validate_schema: bool = True,
     ) -> "Schema":
         # upgrade engine if needed
         stored_schema = migrate_schema(d, d["engine_version"], cls.ENGINE_VERSION)
         # verify schema
-        utils.validate_stored_schema(stored_schema)
+        if validate_schema:
+            utils.validate_stored_schema(stored_schema)
         # add defaults
         stored_schema = utils.apply_defaults(stored_schema)
         # remove processing hints that could be created by normalize and load steps
@@ -385,11 +391,9 @@ class Schema:
                 tables[table_name] = new_table_schema
             else:
                 tables = self._schema_tables
-            # find root table
             try:
-                table = utils.get_root_table(tables, table_name)
-                settings = table["schema_contract"]
-            except KeyError:
+                settings = utils.get_inherited_table_hint(tables, table_name, "schema_contract")
+            except ValueError:
                 settings = self._settings.get("schema_contract", {})
 
         # expand settings, empty settings will expand into default settings
@@ -416,9 +420,8 @@ class Schema:
                     self.name,
                     table_name,
                     parent_table_name,
-                    " This may be due to misconfigured excludes filter that fully deletes content"
-                    f" of the {parent_table_name}. Add includes that will preserve the parent"
-                    " table.",
+                    "If you declared nested hints, make sure you added all intermediate tables,"
+                    " including those for which you do not declare any hints.",
                 )
         table = self._schema_tables.get(table_name)
         if table is None:
@@ -547,20 +550,20 @@ class Schema:
         return diff_c
 
     def get_table(self, table_name: str) -> TTableSchema:
-        return self._schema_tables[table_name]
+        try:
+            return self._schema_tables[table_name]
+        except KeyError as k_exc:
+            raise TableNotFound(self._schema_name, table_name) from k_exc
 
     def get_table_columns(
         self, table_name: str, include_incomplete: bool = False
     ) -> TTableSchemaColumns:
         """Gets columns of `table_name`. Optionally includes incomplete columns"""
+        table = self.get_table(table_name)
         if include_incomplete:
-            return self._schema_tables[table_name]["columns"]
+            return table["columns"]
         else:
-            return {
-                k: v
-                for k, v in self._schema_tables[table_name]["columns"].items()
-                if utils.is_complete_column(v)
-            }
+            return {k: v for k, v in table["columns"].items() if utils.is_complete_column(v)}
 
     def data_tables(
         self, seen_data_only: bool = False, include_incomplete: bool = False
@@ -608,7 +611,7 @@ class Schema:
         return (table_name not in self.tables) or (
             not [
                 c
-                for c in self.tables[table_name]["columns"].values()
+                for c in self._schema_tables[table_name]["columns"].values()
                 if utils.is_complete_column(c)
             ]
         )
@@ -964,8 +967,8 @@ class Schema:
         Returns:
             Tuple[int, str]: Current (``stored_version``, ``stored_version_hash``) tuple
         """
-        self._stored_version, self._stored_version_hash, _, _ = utils.bump_version_if_modified(
-            self.to_dict(bump_version=False)
+        self._stored_version, self._stored_version_hash, _, self._stored_previous_hashes = (
+            utils.bump_version_if_modified(self.to_dict(bump_version=False))
         )
         return self._stored_version, self._stored_version_hash
 
@@ -1238,6 +1241,12 @@ class Schema:
                         )
         # look for auto-detections in settings and then normalizer
         self._type_detections = self._settings.get("detections") or self._normalizers_config.get("detections") or []  # type: ignore
+
+    def __getstate__(self) -> Any:
+        state = self.__dict__.copy()
+        del state["naming"]
+        del state["data_item_normalizer"]
+        return state
 
     def __repr__(self) -> str:
         return f"Schema {self.name} at {id(self)}"

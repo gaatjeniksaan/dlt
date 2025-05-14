@@ -37,7 +37,7 @@ These methods allow for a degree of customization in handling data structure and
 
 `dlt` buffers to disk and has built-in resume and retry mechanisms. This makes it less beneficial to manually manage atomicity after the fact unless you're running serverless. If you choose to load every 10k records instead, you could potentially see benefits like quicker data arrival if you're actively reading, and easier resumption from the last loaded point in case of failure, assuming that state is well-managed and records are sorted.
 
-It's worth noting that `dlt` includes a request library replacement with [built-in retries](../reference/performance#using-the-built-in-requests-client). This means if you pull 10 million records individually, your data should remain safe even in the face of network issues. To resume jobs after a failure, however, it's necessary to run the pipeline in its own virtual machine (VM). Ephemeral storage solutions like Cloud Run don't support job resumption.
+It's worth noting that `dlt` includes a request library replacement with [built-in retries](../reference/performance#use-the-built-in-requests-wrapper-or-restclient-for-api-calls). This means if you pull 10 million records individually, your data should remain safe even in the face of network issues. To resume jobs after a failure, however, it's necessary to run the pipeline in its own virtual machine (VM). Ephemeral storage solutions like Cloud Run don't support job resumption.
 
 ## How to contribute a verified source?
 
@@ -78,14 +78,14 @@ You can also delete it with Python using the [Bigquery client](https://cloud.goo
 
 ## How can I develop a "custom" pagination tracker?
 
-You can use `dlt.sources.incremental` to create a custom cursor for tracking pagination in data streams that lack a specific cursor field. An example can be found in the [Incremental loading with a cursor](../general-usage/incremental-loading.md#incremental-loading-with-a-cursor-field).
+You can use `dlt.sources.incremental` to create a custom cursor for tracking pagination in data streams that lack a specific cursor field. An example can be found in the [Incremental loading with a cursor](../general-usage/incremental/cursor.md).
 
 Alternatively, you can manage the state directly in Python. You can access and modify the state like a standard Python dictionary:
 ```py
 state = dlt.current.resource_state()
 state["your_custom_key"] = "your_value"
 ```
-This method allows you to create custom pagination logic based on your requirements. An example of using `resource_state()` for pagination can be found [here](../general-usage/incremental-loading#custom-incremental-loading-with-pipeline-state).
+This method allows you to create custom pagination logic based on your requirements. An example of using `resource_state()` for pagination can be found [here](../general-usage/incremental/advanced-state.md#custom-incremental-loading-with-pipeline-state).
 
 However, be cautious about overusing the state dictionary, especially in cases involving substreams for each user, as it might become unwieldy. A better strategy might involve tracking users incrementally. Then, upon updates, you only refresh the affected users' substreams entirely. This consideration helps maintain efficiency and manageability in your custom pagination implementation.
 

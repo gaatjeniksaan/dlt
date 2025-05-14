@@ -1,27 +1,28 @@
 import dataclasses
 
-from typing import Final, List, Optional, Type
+from typing import Final, Optional, Type
 
 from dlt.common import logger
 from dlt.common.configuration import configspec, resolve_type
-from dlt.common.destination.reference import (
+from dlt.common.destination.client import (
     CredentialsConfiguration,
     DestinationClientStagingConfiguration,
 )
 
-from dlt.common.storages import FilesystemConfiguration
 from dlt.destinations.impl.filesystem.typing import TCurrentDateTime, TExtraPlaceholders
-
+from dlt.destinations.configuration import FilesystemConfigurationWithLocalFiles
 from dlt.destinations.path_utils import check_layout, get_unused_placeholders
 
 
 @configspec
-class FilesystemDestinationClientConfiguration(FilesystemConfiguration, DestinationClientStagingConfiguration):  # type: ignore[misc]
+class FilesystemDestinationClientConfiguration(FilesystemConfigurationWithLocalFiles, DestinationClientStagingConfiguration):  # type: ignore[misc]
     destination_type: Final[str] = dataclasses.field(  # type: ignore[misc]
         default="filesystem", init=False, repr=False, compare=False
     )
     current_datetime: Optional[TCurrentDateTime] = None
     extra_placeholders: Optional[TExtraPlaceholders] = None
+    max_state_files: int = 100
+    """Maximum number of pipeline state files to keep; 0 or negative value disables cleanup."""
 
     @resolve_type("credentials")
     def resolve_credentials_type(self) -> Type[CredentialsConfiguration]:

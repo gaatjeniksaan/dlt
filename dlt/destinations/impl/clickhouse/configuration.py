@@ -5,7 +5,7 @@ from typing_extensions import Annotated
 from dlt.common.configuration import configspec
 from dlt.common.configuration.specs import ConnectionStringCredentials
 from dlt.common.configuration.specs.base_configuration import NotResolved
-from dlt.common.destination.reference import (
+from dlt.common.destination.client import (
     DestinationClientDwhWithStagingConfiguration,
 )
 from dlt.common.utils import digest128
@@ -21,8 +21,8 @@ class ClickHouseCredentials(ConnectionStringCredentials):
     """Native port ClickHouse server is bound to. Defaults to 9440."""
     http_port: int = 8443
     """HTTP Port to connect to ClickHouse server's HTTP interface.
-    The HTTP port is needed for non-staging pipelines.
-     Defaults to 8123."""
+    The HTTP port is additionaly needed for loading files without a staging destination.
+    Defaults to 8443."""
     username: str = "default"
     """Database user. Defaults to 'default'."""
     database: str = "default"

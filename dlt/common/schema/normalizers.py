@@ -23,7 +23,7 @@ from dlt.common.normalizers.typing import (
     TNamingConventionReferenceArg,
 )
 from dlt.common.typing import is_subclass
-from dlt.common.utils import get_full_class_name
+from dlt.common.utils import get_full_obj_class_name
 
 DEFAULT_NAMING_NAMESPACE = os.environ.get(
     known_env.DLT_DEFAULT_NAMING_NAMESPACE, "dlt.common.normalizers.naming"
@@ -51,6 +51,7 @@ def configured_normalizers(
     is a module or a type it will get converted into string form via import.
 
     If `schema_name` is present, a section ("sources", schema_name, "schema") is used to inject the config
+    via callable sections=_section_for_schema
     """
 
     norm_conf: TNormalizersConfig = {"names": serialize_reference(naming), "json": json_normalizer}
@@ -186,4 +187,4 @@ def serialize_reference(naming: Optional[TNamingConventionReferenceArg]) -> Opti
     if isinstance(naming, str):
         return naming
     # import reference and use naming to get valid path to type
-    return get_full_class_name(naming_from_reference(naming))
+    return get_full_obj_class_name(naming_from_reference(naming))

@@ -69,6 +69,7 @@ feat/4922-add-avro-support
 * **exp** - an experiment where we are testing a new  idea or want to demonstrate something to the team, might turn into a `feat` later (ticket encouraged)
 * **test** - anything related to the tests (ticket encouraged)
 * **docs** - a change to our docs (ticket optional)
+* **keep** - branches we want to keep an revisit later (ticket encouraged)
 
 #### Ticket Numbers
 
@@ -139,7 +140,7 @@ We'll provide you with access to the resources above if you wish to test locally
 
 ## Local Development
 
-Use Python 3.8 for development, as it's the lowest supported version for `dlt`. You'll need `distutils` and `venv`. You may also use `pyenv`, as suggested by [poetry](https://python-poetry.org/docs/managing-environments/).
+Use Python 3.9 for development, as it's the lowest supported version for `dlt`. You'll need `distutils` and `venv`. You may also use `pyenv`, as suggested by [poetry](https://python-poetry.org/docs/managing-environments/).
 
 ## Publishing (Maintainers Only)
 

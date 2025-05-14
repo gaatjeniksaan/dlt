@@ -2,8 +2,6 @@ import os
 from datetime import datetime  # noqa: I251
 from typing import Generic, ClassVar, Any, Optional, Type, Dict, Union, Literal, Tuple
 
-from typing_extensions import get_args
-
 import inspect
 from functools import wraps
 
@@ -16,6 +14,7 @@ from dlt.common.typing import (
     TDataItems,
     TFun,
     TSortOrder,
+    get_args,
     extract_inner_type,
     get_generic_type_argument_from_instance,
     is_optional_type,
@@ -548,7 +547,9 @@ class Incremental(ItemTransform[TDataItem], BaseConfiguration, Generic[TCursorVa
         return self._make_or_get_transformer(JsonIncremental)
 
     def __call__(self, rows: TDataItems, meta: Any = None) -> Optional[TDataItems]:
-        if rows is None:
+        # NOTE: we also forward empty lists, so special empty list types are preserved
+        # example: MaterializedEmptyList
+        if rows is None or (isinstance(rows, list) and len(rows) == 0):
             return rows
         transformer = self._get_transformer(rows)
         if isinstance(rows, list):

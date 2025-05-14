@@ -1,13 +1,15 @@
-import typing as t
+from typing import Any, Optional, Type, Union, Dict, TYPE_CHECKING
+
 
 from dlt.common.destination import Destination, DestinationCapabilitiesContext
-from dlt.common.destination.reference import TDestinationConfig
 from dlt.common.normalizers.naming import NamingConvention
 
 from dlt.destinations.impl.qdrant.configuration import QdrantCredentials, QdrantClientConfiguration
 
-if t.TYPE_CHECKING:
+if TYPE_CHECKING:
     from dlt.destinations.impl.qdrant.qdrant_job_client import QdrantClient
+else:
+    QdrantClient = Any
 
 
 class qdrant(Destination[QdrantClientConfiguration, "QdrantClient"]):
@@ -34,31 +36,51 @@ class qdrant(Destination[QdrantClientConfiguration, "QdrantClient"]):
         cls,
         caps: DestinationCapabilitiesContext,
         config: QdrantClientConfiguration,
-        naming: t.Optional[NamingConvention],
+        naming: Optional[NamingConvention],
     ) -> DestinationCapabilitiesContext:
         caps = super(qdrant, cls).adjust_capabilities(caps, config, naming)
-        if config.credentials.is_local():
+        if config.is_local():
             # Local qdrant can not load in parallel
             caps.loader_parallelism_strategy = "sequential"
             caps.max_parallel_load_jobs = 1
         return caps
 
     @property
-    def client_class(self) -> t.Type["QdrantClient"]:
+    def client_class(self) -> Type["QdrantClient"]:
         from dlt.destinations.impl.qdrant.qdrant_job_client import QdrantClient
 
         return QdrantClient
 
     def __init__(
         self,
-        credentials: t.Union[QdrantCredentials, t.Dict[str, t.Any]] = None,
-        destination_name: t.Optional[str] = None,
-        environment: t.Optional[str] = None,
-        **kwargs: t.Any,
+        credentials: Union[QdrantClient, QdrantCredentials, Dict[str, Any]] = None,
+        location: str = None,
+        path: str = None,
+        destination_name: str = None,
+        environment: str = None,
+        **kwargs: Any,
     ) -> None:
+        """Configure the Qdrant destination to use in a pipeline.
+
+        All arguments provided here supersede other configuration sources such as environment variables and dlt config files.
+
+        Args:
+            credentials (Union[QdrantClient, QdrantCredentials, Dict[str, Any]], optional): Credentials to connect to the Qdrant database. Can be an instance of `QdrantClient` or
+                a dictionary with the credentials parameters.
+            location (str, optional): The location of the Qdrant database.
+            path (str, optional): The path to the Qdrant database.
+            destination_name (str, optional): Name of the destination, can be used in config section to differentiate between multiple of the same type
+            environment (str, optional): Environment of the destination
+            **kwargs (Any, optional): Additional arguments passed to the destination config
+        """
         super().__init__(
             credentials=credentials,
+            location=location,
+            path=path,
             destination_name=destination_name,
             environment=environment,
             **kwargs,
         )
+
+
+qdrant.register()

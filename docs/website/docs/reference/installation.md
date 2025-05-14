@@ -8,7 +8,7 @@ keywords: [installation, environment, pip install]
 
 ## Setting up your environment
 
-### 1. Make sure you are using **Python 3.8-3.12** and have `pip` installed
+### 1. Make sure you are using **Python 3.9-3.13** and have `pip` installed
 
 ```sh
 python --version
@@ -25,7 +25,7 @@ You can install Python 3.10 with `apt`.
 ```sh
 sudo apt update
 sudo apt install python3.10
-sudo apt install python3.10-venv
+pip install uv
 ```
 
   </TabItem>
@@ -36,6 +36,7 @@ On macOS, you can use [Homebrew](https://brew.sh) to install Python 3.10.
 ```sh
 brew update
 brew install python@3.10
+pip install uv
 ```
 
   </TabItem>
@@ -45,6 +46,7 @@ After installing [Python 3.10 (64-bit version) for Windows](https://www.python.o
 
 ```sh
 C:\> pip3 install -U pip
+C:\> pip3 install uv
 ```
 
   </TabItem>
@@ -59,46 +61,46 @@ This way, all the dependencies for your current project will be isolated from pa
 
   <TabItem value="ubuntu">
 
-Create a new virtual environment in your working folder. This will create an `./env` directory where your virtual environment will be stored:
+Create a new virtual environment in your working folder. This will create a `./venv` directory where your virtual environment will be stored:
 
 ```sh
-python -m venv ./env
+uv venv --python 3.10
 ```
 
 Activate the virtual environment:
 
 ```sh
-source ./env/bin/activate
+source .venv/bin/activate
 ```
 
   </TabItem>
   <TabItem value="macos">
 
-Create a new virtual environment in your working folder. This will create an `./env` directory where your virtual environment will be stored:
+Create a new virtual environment in your working folder. This will create a `./venv` directory where your virtual environment will be stored:
 
 ```sh
-python -m venv ./env
+uv venv --python 3.10
 ```
 
 Activate the virtual environment:
 
 ```sh
-source ./env/bin/activate
+source .venv/bin/activate
 ```
 
   </TabItem>
   <TabItem value="windows">
 
-Create a new virtual environment in your working folder. This will create an `./env` directory where your virtual environment will be stored:
+Create a new virtual environment in your working folder. This will create a `./venv` directory where your virtual environment will be stored:
 
 ```bat
-C:\> python -m venv ./env
+C:\> uv venv --python 3.10
 ```
 
 Activate the virtual environment:
 
 ```bat
-C:\> .\env\Scripts\activate
+C:\> .\venv\Scripts\activate
 ```
 
   </TabItem>
@@ -106,30 +108,33 @@ C:\> .\env\Scripts\activate
 
 ### 3. Install `dlt` library
 
-You can now install `dlt` in your virtual environment by running:
+To install or upgrade to the newest version of `dlt` in your virtual environment, run:
 
 ```sh
-# install the newest dlt version or upgrade the existing version to the newest one
-pip install -U dlt
+uv pip install -U dlt
 ```
 
-Other installation examples:
+Here are some additional installation examples:
+
+To install dlt with DuckDB support:
 ```sh
-# install dlt with support for duckdb
-pip install "dlt[duckdb]"
-# install dlt version smaller than 0.5.0
-pip install "dlt<0.5.0"
+uv pip install "dlt[duckdb]"
+```
+
+To install a specific version of dlt (for example, versions before 0.5.0):
+```sh
+uv pip install "dlt<0.5.0"
 ```
 
 ### 3.1. Install dlt via Pixi or Conda
 
-Install dlt using `pixi`:
+To install dlt using `pixi`:
 
 ```sh
 pixi add dlt
 ```
 
-Install dlt using `conda`:
+To install dlt using `conda`:
 
 ```sh
 conda install -c conda-forge dlt

@@ -242,11 +242,11 @@ For more information, read the guide on [how to add a verified source](../../wal
    ```
 
 1. From the ".json" that you
-   [downloaded earlier](google_sheets.md#grab-google-service-account-credentials), copy
+   [downloaded earlier](#google-service-account-credentials), copy
    `project_id`, `private_key`, and `client_email` under `[sources.google_sheets.credentials]`.
 
 1. Alternatively, if you're using OAuth credentials, replace the fields and values with those
-   you [grabbed for OAuth credentials](google_sheets.md#grab-google-oauth-credentials).
+   you [grabbed for OAuth credentials](#google-oauth-credentials).
 
 1. The secrets.toml for OAuth authentication looks like:
 
@@ -442,11 +442,11 @@ dlt.resource(
 `name`: Denotes the table name, set here as "spreadsheet_info".
 
 `write_disposition`: Dictates how data is loaded into the destination.
-[Read more](../../general-usage/incremental-loading#the-3-write-dispositions).
+[Read more](../../general-usage/incremental-loading.md#choosing-a-write-disposition).
 
 `merge_key`: This parameter is used to specify the column used to identify records for merging. In this
 case, "spreadsheet_id" means that the records will be merged based on the values in this column.
-[Read more](../../general-usage/incremental-loading#merge-incremental_loading).
+[Read more](../../general-usage/merge-loading.md).
 
 ## Customization
 

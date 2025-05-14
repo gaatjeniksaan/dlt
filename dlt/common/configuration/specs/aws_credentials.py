@@ -2,7 +2,7 @@ from typing import Optional, Dict, Any, cast
 
 from dlt.common.utils import without_none
 from dlt.common.exceptions import MissingDependencyException
-from dlt.common.typing import TSecretStrValue, DictStrAny
+from dlt.common.typing import TSecretStrValue, DictStrAny, Self
 from dlt.common.configuration.specs import (
     CredentialsConfiguration,
     CredentialsWithDefault,
@@ -27,6 +27,8 @@ class AwsCredentialsWithoutDefaults(
     profile_name: Optional[str] = None
     region_name: Optional[str] = None
     endpoint_url: Optional[str] = None
+    s3_url_style: Optional[str] = None
+    """Only needed for duckdb sql_client s3 access, for minio this needs to be set to path for example."""
 
     def to_s3fs_credentials(self) -> Dict[str, Optional[str]]:
         """Dict of keyword arguments that can be passed to s3fs"""
@@ -89,6 +91,18 @@ class AwsCredentialsWithoutDefaults(
             "s3.endpoint": self.endpoint_url,
             "s3.connect-timeout": 300,
         }
+
+    @classmethod
+    def from_pyiceberg_fileio_config(cls, file_io: Dict[str, Any]) -> Self:
+        credentials: Self = cls()
+        credentials.aws_access_key_id = file_io.get("s3.access-key-id")
+        credentials.aws_secret_access_key = file_io.get("s3.secret-access-key")
+        credentials.aws_session_token = file_io.get("s3.session-token")
+        credentials.region_name = file_io.get("s3.region")
+        credentials.endpoint_url = file_io.get("s3.endpoint")
+        if not credentials.is_partial():
+            credentials.resolve()
+        return credentials
 
 
 @configspec

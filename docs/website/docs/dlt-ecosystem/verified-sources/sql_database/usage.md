@@ -10,6 +10,7 @@ import Header from '../_source-info-header.md';
 
 <Header/>
 
+
 ## Applying column-wise filtering on the data being ingested
 
 By default, the existing source and resource functions, `sql_database` and `sql_table`, ingest all of the records from the source table. However, by using `query_adapter_callback`, it is possible to pass a `WHERE` clause inside the underlying `SELECT` statement using the [SQLAlchemy syntax](https://docs.sqlalchemy.org/en/14/core/selectable.html#). This enables filtering the data based on specific columns before extraction.
@@ -56,7 +57,7 @@ def query_adapter_callback(
 ```
 In the snippet above we do a few interesting things:
 1. We create a text query with `sa.text`
-2. We change the condition on selecting incremental column from the default `ge` to `greater` (f" {incremental.cursor_path} > :start_value")
+2. We change the condition on selecting incremental column from the default `ge` to `greater` (f" \{incremental.cursor_path\} > :start_value")
 3. We add additional computed columns: `1 as add_int, 'const' as add_text`. You can also join other table here.
 
 We recommend that you explicitly type additional columns that you added with `table_adapter_callback`:
@@ -189,5 +190,5 @@ You can deploy the `sql_database` pipeline with any of the `dlt` deployment meth
 When running on Airflow:
 1. Use the `dlt` [Airflow Helper](../../../walkthroughs/deploy-a-pipeline/deploy-with-airflow-composer.md#2-modify-dag-file) to create tasks from the `sql_database` source. (If you want to run table extraction in parallel, you can do this by setting `decompose = "parallel-isolated"` when doing the source->DAG conversion. See [here](../../../walkthroughs/deploy-a-pipeline/deploy-with-airflow-composer#2-modify-dag-file) for a code example.)
 2. Reflect tables at runtime with the `defer_table_reflect` argument.
-3. Set `allow_external_schedulers` to load data using [Airflow intervals](../../../general-usage/incremental-loading.md#using-airflow-schedule-for-backfill-and-incremental-loading).
+3. Set `allow_external_schedulers` to load data using [Airflow intervals](../../../general-usage/incremental/cursor.md#using-airflow-schedule-for-backfill-and-incremental-loading).
 

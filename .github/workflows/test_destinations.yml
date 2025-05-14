@@ -1,14 +1,16 @@
 
-name: dest | redshift, postgres and fs
+name: dest | redshift and postgres
 
 on:
-  pull_request:
+  pull_request_target:
     branches:
       - master
       - devel
+    types:
+      - opened
+      - synchronize
+      - labeled
   workflow_dispatch:
-  schedule:
-    - cron:  '0 2 * * *'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -29,19 +31,26 @@ env:
   RUNTIME__DLTHUB_TELEMETRY_ENDPOINT: ${{ secrets.RUNTIME__DLTHUB_TELEMETRY_ENDPOINT }}
   # Test redshift and filesystem with all buckets
   # postgres runs again here so we can test on mac/windows
-  ACTIVE_DESTINATIONS: "[\"redshift\", \"postgres\", \"duckdb\", \"filesystem\", \"dummy\"]"
+  ACTIVE_DESTINATIONS: "[\"redshift\", \"postgres\", \"duckdb\", \"dummy\"]"
   # note that all buckets are enabled for testing
   ALL_FILESYSTEM_DRIVERS: "[\"memory\", \"file\", \"r2\", \"s3\", \"gs\", \"az\", \"abfss\", \"gdrive\"]" #excludes sftp
 
 jobs:
+  authorize:
+    # run when label is assigned OR when we are not a fork
+    # see https://iterative.ai/blog/testing-external-contributions-using-github-actions-secrets for inspiration
+    if: ${{ github.event.label.name == 'ci from fork' || (github.event.pull_request.head.repo.full_name == github.repository && (github.event.action == 'opened' || github.event.action == 'synchronize'))}}
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+
   get_docs_changes:
     name: docs changes
+    needs: authorize
     uses: ./.github/workflows/get_docs_changes.yml
-    # Tests that require credentials do not run in forks
-    if: ${{ !github.event.pull_request.head.repo.fork || contains(github.event.pull_request.labels.*.name, 'ci from fork')}}
 
   run_loader:
-    name: dest | redshift, postgres and fs tests
+    name: dest | redshift and postgres tests
     needs: get_docs_changes
     if: needs.get_docs_changes.outputs.changes_outside_docs == 'true'
     strategy:
@@ -55,6 +64,8 @@ jobs:
 
       - name: Check out
         uses: actions/checkout@master
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -78,10 +89,7 @@ jobs:
       #     key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}-redshift
 
       - name: Install dependencies
-        run: poetry install --no-interaction -E redshift -E postgis -E postgres -E gs -E s3 -E az -E parquet -E duckdb -E cli -E filesystem --with sentry-sdk --with pipeline -E deltalake -E pyiceberg && poetry run pip install ibis-framework[duckdb,postgres,bigquery,snowflake,mssql,clickhouse]
-
-      - name: Upgrade sqlalchemy
-        run: poetry run pip install sqlalchemy==2.0.18  # minimum version required by `pyiceberg`
+        run: poetry install --no-interaction -E redshift -E postgis -E postgres -E gs -E s3 -E az -E parquet -E duckdb -E cli -E filesystem --with sentry-sdk --with pipeline --with ibis
 
       - name: create secrets.toml
         run: pwd && echo "$DLT_SECRETS_TOML" > tests/.dlt/secrets.toml

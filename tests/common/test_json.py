@@ -1,8 +1,9 @@
 import io
 import os
-from typing import List, NamedTuple
+from typing import Any, List, NamedTuple
 from dataclasses import dataclass
 import pytest
+from copy import deepcopy
 
 from dlt.common import json, Decimal, pendulum
 from dlt.common.arithmetics import numeric_default_context
@@ -18,6 +19,8 @@ from dlt.common.json import (
     _simplejson,
     SupportsJson,
     _DATETIME,
+    _custom_encoder,
+    JsonSerializable,
 )
 
 from tests.utils import autouse_test_storage, TEST_STORAGE_ROOT, preserve_environ
@@ -210,11 +213,33 @@ def test_json_pendulum(json_impl: SupportsJson) -> None:
     s_r = json_impl.loads(s)
     assert s_r["date"] == "2022-02-02"
     assert s_r["time"] == "20:37:37.358236"
+
     # Decodes zulu notation as well
     dt_str_z = "2005-04-02T20:37:37.358236Z"
     s = f'"{_DATETIME + dt_str_z}"'
     s_r = json_impl.typed_loads(s)
     assert s_r == pendulum.parse(dt_str_z)
+
+    # decodes timezones and ensures that deepcopy retains timezones
+    # we had a bug where timezones got lost during deepcopy
+    dt_str_utc = "2005-04-02T20:37:37.358236Z"
+    dt_str_0200 = "2005-04-02T20:37:37.358236+02:00"
+    dt_naive = "2005-04-02T20:37:37.358236"
+
+    values = {
+        "utc": pendulum.parse(dt_str_utc),
+        "0200": pendulum.parse(dt_str_0200),
+        "naive": pendulum.parse(dt_naive, tz=None),
+    }
+
+    loaded_values = json_impl.typed_loads(json_impl.typed_dumps(values))
+    assert loaded_values == values
+
+    copied_values = deepcopy(loaded_values)
+    assert copied_values == values == loaded_values
+    assert copied_values["utc"].tzname() == "+00:00"
+    assert copied_values["0200"].tzname() == "+02:00"
+    assert copied_values["naive"].tzname() is None
 
 
 # @pytest.mark.parametrize("json_impl", _JSON_IMPL)
@@ -224,6 +249,17 @@ def test_json_pendulum(json_impl: SupportsJson) -> None:
 #     delta = pendulum.interval(start_date, pendulum.now())
 #     assert isinstance(delta, timedelta)
 #     print(str(delta.as_timedelta()))
+
+current_custom_encoder = _custom_encoder
+
+
+@pytest.fixture(autouse=True)
+def run_around_tests():
+    json.set_custom_encoder(None)
+    try:
+        yield
+    finally:
+        json.set_custom_encoder(current_custom_encoder)
 
 
 @pytest.mark.parametrize("json_impl", _JSON_IMPL)
@@ -348,3 +384,41 @@ def test_load_and_compare_all_impls() -> None:
         assert docs[idx] == docs[idx + 1]
         assert dump_s[idx] == dump_s[idx + 1]
         assert dump_b[idx] == dump_b[idx + 1]
+
+
+class Pow:
+    my_number: int
+
+    def __init__(self, my_number: int) -> None:
+        self.my_number = my_number
+
+    def result(self) -> str:
+        return f"{self.my_number*self.my_number}"
+
+
+def roundtrip(json_impl: SupportsJson) -> None:
+    x = Pow(my_number=2)
+    s = json_impl.dumps(x)
+    assert json_impl.loads(s) == "4"
+
+
+@pytest.mark.parametrize("json_impl", _JSON_IMPL)
+def test_serialize_custom_types_no_encoder(json_impl: SupportsJson) -> None:
+    with pytest.raises(TypeError, match="is not JSON serializable"):
+        roundtrip(json_impl)
+
+
+@pytest.mark.parametrize("json_impl", _JSON_IMPL)
+def test_serialize_custom_types_with_encoder(json_impl: SupportsJson) -> None:
+    calls = 0
+
+    def my_custom_encoder(obj: Any) -> JsonSerializable:
+        nonlocal calls
+        calls += 1
+        if isinstance(obj, Pow):
+            return obj.result()
+        raise TypeError(repr(obj) + " is not JSON serializable")
+
+    json_impl.set_custom_encoder(my_custom_encoder)
+    roundtrip(json_impl)
+    assert calls == 1

@@ -11,15 +11,15 @@ from tenacity import (
     RetryCallState,
 )
 
-from dlt.common.known_env import DLT_DATA_DIR, DLT_PROJECT_DIR
+from dlt.common.known_env import DLT_DATA_DIR, DLT_PROJECT_DIR, DLT_LOCAL_DIR
 from dlt.common.exceptions import MissingDependencyException
 
 try:
     from airflow.configuration import conf
     from airflow.models import TaskInstance
     from airflow.utils.task_group import TaskGroup
-    from airflow.operators.dummy import DummyOperator
-    from airflow.operators.python import PythonOperator, get_current_context
+    from airflow.operators.empty import EmptyOperator
+    from airflow.operators.python import BaseOperator, PythonOperator, get_current_context
 except ModuleNotFoundError:
     raise MissingDependencyException("Airflow", ["apache-airflow>=2.5"])
 
@@ -114,6 +114,7 @@ class PipelineTasksGroup(TaskGroup):
         # reload providers so config.toml in dags folder is included
         dags_folder = conf.get("core", "dags_folder")
 
+        # TODO: use injectable Airflow run context
         # set the dlt project folder to dags
         os.environ[DLT_PROJECT_DIR] = dags_folder
 
@@ -124,8 +125,10 @@ class PipelineTasksGroup(TaskGroup):
             # create random path
             data_dir = os.path.join(local_data_folder or gettempdir(), f"dlt_{uniq_id(8)}")
         os.environ[DLT_DATA_DIR] = data_dir
+        # also keep all local files created by destinations in data_dir
+        os.environ[DLT_LOCAL_DIR] = data_dir
 
-        # reload config providers
+        # reload config providers (TODO: inject Airflow run context)
         if PluggableRunContext in Container():
             Container()[PluggableRunContext].reload_providers()
 
@@ -266,7 +269,7 @@ class PipelineTasksGroup(TaskGroup):
         if self.abort_task_if_any_job_failed is not None:
             dlt.config["load.raise_on_failed_jobs"] = self.abort_task_if_any_job_failed
             logger.info(
-                "Set load.abort_task_if_any_job_failed to {self.abort_task_if_any_job_failed}"
+                f"Set load.abort_task_if_any_job_failed to {self.abort_task_if_any_job_failed}"
             )
 
         if self.log_progress_period > 0 and task_pipeline.collector == NULL_COLLECTOR:
@@ -343,7 +346,7 @@ class PipelineTasksGroup(TaskGroup):
         schema_contract: TSchemaContract = None,
         on_before_run: Callable[[], None] = None,
         **kwargs: Any,
-    ) -> List[PythonOperator]:
+    ) -> List[BaseOperator]:
         """Creates a task or a group of tasks to run `data` with `pipeline`
 
         Creates an Airflow task that extracts, normalizes and loads `data` with the passed pipeline instance `pipeline`. If `data` is a source
@@ -404,7 +407,7 @@ class PipelineTasksGroup(TaskGroup):
             # use factory function to make a task, in order to parametrize it
             # passing arguments to task function (_run) is serializing
             # them and running template engine on them
-            def make_task(pipeline: Pipeline, data: Any, name: str = None) -> PythonOperator:
+            def make_task(pipeline: Pipeline, data: Any, name: str = None) -> BaseOperator:
                 f = functools.partial(
                     self._run,
                     pipeline,
@@ -466,7 +469,7 @@ class PipelineTasksGroup(TaskGroup):
 
                     tasks.append(make_task(pipeline, source))
 
-                end = DummyOperator(task_id=f"{t_name}_end")
+                end = EmptyOperator(task_id=f"{t_name}_end")
 
                 if tasks:
                     start >> tasks >> end
@@ -500,7 +503,7 @@ class PipelineTasksGroup(TaskGroup):
                     tasks.append(make_task(pipeline, source, new_pipeline_name))
 
                 t_name = self._task_name(pipeline, data)
-                end = DummyOperator(task_id=f"{t_name}_end")
+                end = EmptyOperator(task_id=f"{t_name}_end")
 
                 if tasks:
                     start >> tasks >> end

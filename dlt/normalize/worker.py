@@ -9,7 +9,10 @@ from dlt.common.data_writers import (
     get_best_writer_spec,
     is_native_writer,
 )
+from dlt.common.destination.utils import prepare_load_table
 from dlt.common.metrics import DataWriterMetrics
+from dlt.common.schema.utils import new_table
+from dlt.common.typing import TLoaderFileFormat
 from dlt.common.utils import chunks
 from dlt.common.schema.typing import TStoredSchema, TTableSchema
 from dlt.common.storages import (
@@ -90,6 +93,8 @@ def w_normalize_files(
             if table_name in item_normalizers:
                 return item_normalizers[table_name]
 
+            # TODO: extract code that resolves file_format from preferred to utils
+
             items_preferred_file_format = preferred_file_format
             items_supported_file_formats = supported_file_formats
             if destination_caps.loader_file_format_selector is not None:
@@ -112,7 +117,7 @@ def w_normalize_files(
                     parsed_file_name.file_format, items_supported_file_formats  # type: ignore[arg-type]
                 )
 
-            config_loader_file_format = config.loader_file_format
+            config_loader_file_format: TLoaderFileFormat = None
             if file_format := table_schema.get("file_format"):
                 # resource has a file format defined so use it
                 if file_format == "preferred":
@@ -223,7 +228,13 @@ def w_normalize_files(
                     schema, schema.naming, parsed_file_name.table_name
                 )
                 root_tables.add(root_table_name)
-                root_table = stored_schema["tables"].get(root_table_name, {"name": root_table_name})
+                root_table = stored_schema["tables"].get(root_table_name) or new_table(
+                    root_table_name
+                )
+                # prepare table
+                root_table = prepare_load_table(
+                    stored_schema["tables"], root_table, destination_caps
+                )
                 normalizer = _get_items_normalizer(
                     parsed_file_name,
                     root_table,

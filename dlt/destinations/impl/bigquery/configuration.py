@@ -6,7 +6,7 @@ from dlt.common.configuration import configspec
 from dlt.common.configuration.specs import GcpServiceAccountCredentials
 from dlt.common.utils import digest128
 
-from dlt.common.destination.reference import DestinationClientDwhWithStagingConfiguration
+from dlt.common.destination.client import DestinationClientDwhWithStagingConfiguration
 
 
 @configspec
@@ -31,6 +31,8 @@ class BigQueryClientConfiguration(DestinationClientDwhWithStagingConfiguration):
     """Number of rows in streaming insert batch"""
     autodetect_schema: bool = False
     """Allow BigQuery to autodetect schemas and create data tables"""
+    ignore_unknown_values: bool = False
+    """Ignore unknown values in the data"""
 
     __config_gen_annotations__: ClassVar[List[str]] = ["location"]
 

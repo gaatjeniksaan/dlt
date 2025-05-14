@@ -6,7 +6,13 @@ keywords: [scaling, parallelism, finetuning]
 
 # Optimizing dlt
 
-## Yield pages instead of rows
+This page contains a collection of tips and tricks to optimize dlt pipelines for speed, scalability and memory footprint. Keep in mind that dlt works in [three discreet stages](./explainers/how-dlt-works) that all have their own performance characteristics.
+
+
+## Optimizing the extract stage
+
+
+### Yield pages instead of rows
 
 If possible, yield pages when producing data. This approach makes some processes more effective by reducing
 the number of necessary function calls (each chunk of data that you yield goes through the extract pipeline once, so if you yield a chunk of 10,000 items, you will gain significant savings).
@@ -18,7 +24,73 @@ can be replaced with:
 <!--@@@DLT_SNIPPET ./performance_snippets/performance-snippets.py::performance_chunking_chunk-->
 
 
-## Memory/disk management
+### Resources extraction, `fifo` vs. `round robin`
+
+When extracting from resources, you have two options to determine the order of queries to your
+resources: `round_robin` and `fifo`.
+
+`round_robin` is the default option and will result in the extraction of one item from the first resource, then one item from the second resource, etc., doing as many rounds as necessary until all resources are fully extracted. If you want to extract resources in parallel, you will need to keep `round_robin`.
+
+`fifo` is an option for sequential extraction. It will result in every resource being fully extracted until the resource generator is expired, or a configured limit is reached, then the next resource will be evaluated. Resources are extracted in the order that you added them to your source.
+
+:::tip
+Switch to `fifo` when debugging sources with many resources and connected transformers, for example [rest_api](../dlt-ecosystem/verified-sources/rest_api/index.md).
+Your data will be requested in a deterministic and straightforward order - a given data item (i.e., a user record you got from an API) will be processed by all resources
+and transformers until completion before starting with a new one.
+:::
+
+You can change this setting in your `config.toml` as follows:
+
+<!--@@@DLT_SNIPPET ./performance_snippets/toml-snippets.toml::item_mode_toml-->
+
+
+### Use the built-in requests wrapper or RESTClient for API calls
+
+Instead of using Python Requests directly, you can use the built-in [requests wrapper](../general-usage/http/requests) or [`RESTClient`](../general-usage/http/rest-client) for API calls. This will make your pipeline more resilient to intermittent network errors and other random glitches.
+
+
+### Use built-in JSON parser
+`dlt` uses **orjson** if available. If not, it falls back to **simplejson**. The built-in parsers serialize several Python types:
+- Decimal
+- DateTime, Date
+- Dataclasses
+
+Import the module as follows for use in your sources, resources and transformers:
+
+```py
+from dlt.common import json
+```
+
+For custom types support you can add a custom user-defined encoder like this:
+
+```py
+from dlt.common import json
+from dlt.common.json import JsonSerializable
+from pydantic import AnyUrl
+
+def my_custom_encoder(obj: Any) -> JsonSerializable:
+    if isinstance(obj, AnyUrl):
+        # encodes the url as non-punycode string
+        return obj.unicode_string()
+    # Don't know this type, throw
+    raise TypeError(repr(obj) + " is not JSON serializable")
+
+json.set_custom_encoder(my_custom_encoder)
+```
+
+:::tip
+**orjson** is fast and available on most platforms. It uses binary streams, not strings, to load data natively.
+- Open files as binary, not string, to use `load` and `dump`.
+- Use `loadb` and `dumpb` methods to work with bytes without decoding strings.
+
+You can switch to **simplejson** at any moment by (1) removing the **orjson** dependency or (2) setting the following env variable:
+```sh
+DLT_USE_JSON=simplejson
+```
+:::
+
+
+## Overall Memory and disk management
 `dlt` buffers data in memory to speed up processing and uses the file system to pass data between the **extract** and **normalize** stages. You can control the size of the buffers and the size and number of the files to fine-tune memory and CPU usage. These settings also impact parallelism, which is explained in the next chapter.
 
 ### Controlling in-memory buffers
@@ -48,7 +120,7 @@ Some file formats (e.g., Parquet) do not support schema changes when writing a s
 
 Below, we set files to rotate after 100,000 items written or when the filesize exceeds 1MiB.
 
-<!--@@@DLT_SNIPPET ./performance_snippets/toml-snippets.toml::file_size_toml--> 
+<!--@@@DLT_SNIPPET ./performance_snippets/toml-snippets.toml::file_size_toml-->
 
 ### Disabling and enabling file compression
 Several [text file formats](../dlt-ecosystem/file-formats/) have `gzip` compression enabled by default. If you wish that your load packages have uncompressed files (e.g., to debug the content easily), change `data_writer.disable_compression` in config.toml. The entry below will disable the compression of the files processed in the `normalize` stage.
@@ -60,7 +132,7 @@ Several [text file formats](../dlt-ecosystem/file-formats/) have `gzip` compress
 Keep in mind that load packages are buffered to disk and are left for any troubleshooting, so you can [clear disk space by setting the `delete_completed_jobs` option](../running-in-production/running.md#data-left-behind).
 
 ### Observing CPU and memory usage
-Please make sure that you have the `psutil` package installed (note that Airflow installs it by default). Then, you can dump the stats periodically by setting the [progress](../general-usage/pipeline.md#display-the-loading-progress) to `log` in `config.toml`:
+Please make sure that you have the `psutil` package installed (note that Airflow installs it by default). Then, you can dump the stats periodically by setting the [progress](../general-usage/pipeline.md#monitor-the-loading-progress) to `log` in `config.toml`:
 ```toml
 progress="log"
 ```
@@ -69,7 +141,7 @@ or when running the pipeline:
 PROGRESS=log python pipeline_script.py
 ```
 
-## Parallelism
+## Parallelism within a pipeline
 You can create pipelines that extract, normalize, and load data in parallel.
 
 ### Extract
@@ -116,7 +188,7 @@ in parallel, instead yield functions or async functions that will be evaluated i
 :::
 
 ### Normalize
-The **normalize** stage uses a process pool to create load packages concurrently. Each file created by the **extract** stage is sent to a process pool. **If you have just a single resource with a lot of data, you should enable [extract file rotation](#controlling-intermediary-files-size-and-rotation)**. The number of processes in the pool is controlled by the `workers` config value:
+The **normalize** stage uses a process pool to create load packages concurrently. Each file created by the **extract** stage is sent to a process pool. **If you have just a single resource with a lot of data, you should enable [extract file rotation](#controlling-intermediary-file-size-and-rotation)**. The number of processes in the pool is controlled by the `workers` config value:
 <!--@@@DLT_SNIPPET ./performance_snippets/toml-snippets.toml::normalize_workers_toml-->
 
 
@@ -142,7 +214,7 @@ start_method="spawn"
 ### Load
 The **load** stage uses a thread pool for parallelization. Loading is input/output-bound. `dlt` avoids any processing of the content of the load package produced by the normalizer. By default, loading happens in 20 threads, each loading a single file.
 
-As before, **if you have just a single table with millions of records, you should enable [file rotation in the normalizer](#controlling-intermediary-files-size-and-rotation)**. Then the number of parallel load jobs is controlled by the `workers` config setting.
+As before, **if you have just a single table with millions of records, you should enable [file rotation in the normalizer](#controlling-intermediary-file-size-and-rotation)**. Then the number of parallel load jobs is controlled by the `workers` config setting.
 
 <!--@@@DLT_SNIPPET ./performance_snippets/toml-snippets.toml::normalize_workers_2_toml-->
 
@@ -201,70 +273,43 @@ the schema. That should not be a problem, though, as long as your data does not 
   should be accessed serially to avoid losing details on parallel runs.
 
 
-## Running several pipelines in parallel in a single process
+## Running multiple pipelines in parallel
+
+### Parallelism within a single process
+
 You can run several pipeline instances in parallel from a single process by placing them in
 separate threads. The most straightforward way is to use `ThreadPoolExecutor` and `asyncio` to execute pipeline methods.
 
 <!--@@@DLT_SNIPPET ./performance_snippets/performance-snippets.py::parallel_pipelines-->
 
-
 :::tip
 Please note the following:
-1. Do not run pipelines with the same name and working dir in parallel. State synchronization will not
-work in that case.
-2. When running in multiple threads and using [parallel normalize step](#normalize), use the **spawn**
+
+1. When running in multiple threads and using [parallel normalize step](#normalize), use the **spawn**
 process start method.
-3. If you created the `Pipeline` object in the worker thread and you use it from another (i.e., the main thread),
+2. If you created the `Pipeline` object in the worker thread and you use it from another (i.e., the main thread),
 call `pipeline.activate()` to inject the right context into the current thread.
 :::
 
-## Resources extraction, `fifo` vs. `round robin`
 
-When extracting from resources, you have two options to determine the order of queries to your
-resources: `round_robin` and `fifo`.
+### Parallelism across processes or machines
 
-`round_robin` is the default option and will result in the extraction of one item from the first resource, then one item from the second resource, etc., doing as many rounds as necessary until all resources are fully extracted. If you want to extract resources in parallel, you will need to keep `round_robin`.
+You can also run pipelines in parallel across multiple machines. Please consult our [deployment guides](../walkthroughs/deploy-a-pipeline) for more information. Please take note of the pitfalls listed below.
 
-`fifo` is an option for sequential extraction. It will result in every resource being fully extracted until the resource generator is expired, or a configured limit is reached, then the next resource will be evaluated. Resources are extracted in the order that you added them to your source.
+### Pitfalls
 
-:::tip
-Switch to `fifo` when debugging sources with many resources and connected transformers, for example [rest_api](../dlt-ecosystem/verified-sources/rest_api/index.md).
-Your data will be requested in a deterministic and straightforward order - a given data item (i.e., a user record you got from an API) will be processed by all resources
-and transformers until completion before starting with a new one.
-:::
+Due to the way `dlt` works, there are a few general pitfalls to be aware of:
 
-You can change this setting in your `config.toml` as follows:
+1. Do not run pipelines with the same name and working dir in parallel on the same machine. dlt will not be able to manage state and temporary files properly if you do this.
 
-<!--@@@DLT_SNIPPET ./performance_snippets/toml-snippets.toml::item_mode_toml-->
+2. If you're running multiple pipelines in parallel that write to the same destination dataset and use a staging area, make sure to do one of the following:
+    - Assign a unique subfolder in the staging destination bucket for each pipeline, or
+    - [Disable automatic cleanup of the staging area](../dlt-ecosystem/staging#how-to-prevent-staging-files-truncation) after each load for all pipelines.
 
+    If you do not, files might be deleted by one pipeline that are still required to be loaded by another pipeline running in parallel.
 
-
-## Use built-in JSON parser
-`dlt` uses **orjson** if available. If not, it falls back to **simplejson**. The built-in parsers serialize several Python types:
-- Decimal
-- DateTime, Date
-- Dataclasses
-
-Import the module as follows:
-```py
-from dlt.common import json
-```
-
-:::tip
-**orjson** is fast and available on most platforms. It uses binary streams, not strings, to load data natively.
-- Open files as binary, not string, to use `load` and `dump`.
-- Use `loadb` and `dumpb` methods to work with bytes without decoding strings.
-
-You can switch to **simplejson** at any moment by (1) removing the **orjson** dependency or (2) setting the following env variable:
-```sh
-DLT_USE_JSON=simplejson
-```
-:::
-
-## Using the built-in requests wrapper or RESTClient for API calls
-
-Instead of using Python Requests directly, you can use the built-in [requests wrapper](../general-usage/http/requests) or [`RESTClient`](../general-usage/http/rest-client) for API calls. This will make your pipeline more resilient to intermittent network errors and other random glitches.
-
+3. If you are using a write disposition that requires a staging dataset on the final destination, you should provide a unqiue staging datasetname for each pipeline, otherwise similar problems as noted above may occur. You can do this with the
+[`staging_dataset_name_layout` setting.](../dlt-ecosystem/staging#staging-dataset)
 
 ## Keep pipeline working folder in a bucket on constrained environments.
 `dlt` stores extracted data in load packages in order to load them atomically. In case you extract a lot of data at once (ie. backfill) or
@@ -291,3 +336,24 @@ volumes {
   }
 }
 ```
+## Handling storage limits
+
+If your storage reaches its limit, you are likely running dlt in a cloud environment with restricted disk space. To prevent issues, mount an external cloud storage location and set the `DLT_DATA_DIR` environment variable to point to it. This ensures that dlt uses the mounted storage as its data directory instead of local disk space.
+
+
+### Setting `DLT_DATA_DIR`
+
+You can configure `DLT_DATA_DIR` in your environment setup as follows:
+
+```py
+import os
+
+# Define the path to your mounted external storage
+data_dir = "/path/to/mounted/bucket/dlt_pipeline_data"
+
+# Set the DLT_DATA_DIR environment variable
+os.environ["DLT_DATA_DIR"] = data_dir
+
+# Rest of your pipeline code
+```
+This directs dlt to use the specified external storage for all data operations, preventing local storage constraints.

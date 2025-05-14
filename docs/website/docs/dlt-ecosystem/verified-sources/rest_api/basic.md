@@ -35,17 +35,12 @@ source = rest_api_source({
         "posts",
 
         # The explicit configuration allows you to link resources
-        # and define parameters.
+        # and define query string parameters.
         {
             "name": "comments",
             "endpoint": {
-                "path": "posts/{post_id}/comments",
+                "path": "posts/{resources.posts.id}/comments",
                 "params": {
-                    "post_id": {
-                        "type": "resolve",
-                        "resource": "posts",
-                        "field": "id",
-                    },
                     "sort": "created_at",
                 },
             },
@@ -132,8 +127,6 @@ github_token = "your_github_token"
 
 ## Source configuration
 
-
-
 ### Quick example
 
 Let's take a look at the GitHub example in the `rest_api_pipeline.py` file:
@@ -179,14 +172,7 @@ def github_source(github_token=dlt.secrets.value):
             {
                 "name": "issue_comments",
                 "endpoint": {
-                    "path": "issues/{issue_number}/comments",
-                    "params": {
-                        "issue_number": {
-                            "type": "resolve",
-                            "resource": "issues",
-                            "field": "number",
-                        }
-                    },
+                    "path": "issues/{resources.issues.number}/comments",
                 },
                 "include_from_parent": ["id"],
             },
@@ -212,7 +198,7 @@ The declarative resource configuration is defined in the `config` dictionary. It
 
 2. `resource_defaults`: Contains default settings for all [resources](#resource-configuration). In this example, we define that all resources:
     - Have `id` as the [primary key](../../../general-usage/resource#define-schema)
-    - Use the `merge` [write disposition](../../../general-usage/incremental-loading#choosing-a-write-disposition) to merge the data with the existing data in the destination.
+    - Use the `merge` [write disposition](../../../general-usage/incremental-loading.md#choosing-a-write-disposition) to merge the data with the existing data in the destination.
     - Send a `per_page=100` query parameter with each request to get more results per page.
 
 3. `resources`: A list of [resources](#resource-configuration) to be loaded. Here, we have two resources: `issues` and `issue_comments`, which correspond to the GitHub API endpoints for [repository issues](https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28#list-repository-issues) and [issue comments](https://docs.github.com/en/rest/issues/comments?apiVersion=2022-11-28#list-issue-comments). Note that we need an issue number to fetch comments for each issue. This number is taken from the `issues` resource. More on this in the [resource relationships](#define-resource-relationships) section.
@@ -335,7 +321,7 @@ config = {
 ```
 This would use `Bearer` auth as defined in the `client` for `resource-using-bearer-auth` and `Http Basic` auth for `my-resource-with-special-auth`.
 
-You can also pass additional resource parameters that will be used to configure the dlt resource. See [dlt resource API reference](../../../api_reference/extract/decorators#resource) for more details.
+You can also pass additional resource parameters that will be used to configure the dlt resource. See [dlt resource API reference](../../../api_reference/dlt/extract/decorators#resource) for more details.
 
 ### Endpoint configuration
 
@@ -364,7 +350,7 @@ The fields in the endpoint configuration are:
 - `path`: The path to the API endpoint. By default this path is appended to the given `base_url`. If this is a fully qualified URL starting with `http:` or `https:` it will be
 used as-is and `base_url` will be ignored.
 - `method`: The HTTP method to be used. The default is `GET`.
-- `params`: Query parameters to be sent with each request. For example, `sort` to order the results or `since` to specify [incremental loading](#incremental-loading). This is also used to define [resource relationships](#define-resource-relationships).
+- `params`: Query parameters to be sent with each request. For example, `sort` to order the results or `since` to specify [incremental loading](#incremental-loading). This is also may be used to define [resource relationships](#define-resource-relationships).
 - `json`: The JSON payload to be sent with the request (for POST and PUT requests).
 - `paginator`: Pagination configuration for the endpoint. See the [pagination](#pagination) section for more details.
 - `data_selector`: A JSONPath to select the data from the response. See the [data selection](#data-selection) section for more details.
@@ -424,18 +410,18 @@ from dlt.sources.helpers.rest_client.paginators import JSONLinkPaginator
 ```
 
 :::note
-Currently, pagination is supported only for GET requests. To handle POST requests with pagination, you need to implement a [custom paginator](../../../general-usage/http/rest-client.md#custom-paginator).
+Currently, pagination is supported only for GET requests. To handle POST requests with pagination, you need to implement a [custom paginator](../../../general-usage/http/rest-client.md#implementing-a-custom-paginator).
 :::
 
 These are the available paginators:
 
 | `type` | Paginator class | Description |
 | ------------ | -------------- | ----------- |
-| `json_link` | [JSONLinkPaginator](../../../general-usage/http/rest-client.md#jsonresponsepaginator) | The link to the next page is in the body (JSON) of the response.<br/>*Parameters:*<ul><li>`next_url_path` (str) - the JSONPath to the next page URL</li></ul> |
+| `json_link` | [JSONLinkPaginator](../../../general-usage/http/rest-client.md#jsonlinkpaginator) | The link to the next page is in the body (JSON) of the response.<br/>*Parameters:*<ul><li>`next_url_path` (str) - the JSONPath to the next page URL</li></ul> |
 | `header_link` | [HeaderLinkPaginator](../../../general-usage/http/rest-client.md#headerlinkpaginator) | The links to the next page are in the response headers.<br/>*Parameters:*<ul><li>`links_next_key` (str) - the name of the header containing the links. Default is "next".</li></ul> |
 | `offset` | [OffsetPaginator](../../../general-usage/http/rest-client.md#offsetpaginator) | The pagination is based on an offset parameter, with the total items count either in the response body or explicitly provided.<br/>*Parameters:*<ul><li>`limit` (int) - the maximum number of items to retrieve in each request</li><li>`offset` (int) - the initial offset for the first request. Defaults to `0`</li><li>`offset_param` (str) - the name of the query parameter used to specify the offset. Defaults to "offset"</li><li>`limit_param` (str) - the name of the query parameter used to specify the limit. Defaults to "limit"</li><li>`total_path` (str) - a JSONPath expression for the total number of items. If not provided, pagination is controlled by `maximum_offset` and `stop_after_empty_page`</li><li>`maximum_offset` (int) - optional maximum offset value. Limits pagination even without total count</li><li>`stop_after_empty_page` (bool) - Whether pagination should stop when a page contains no result items. Defaults to `True`</li></ul> |
 | `page_number` | [PageNumberPaginator](../../../general-usage/http/rest-client.md#pagenumberpaginator) | The pagination is based on a page number parameter, with the total pages count either in the response body or explicitly provided.<br/>*Parameters:*<ul><li>`base_page` (int) - the starting page number. Defaults to `0`</li><li>`page_param` (str) - the query parameter name for the page number. Defaults to "page"</li><li>`total_path` (str) - a JSONPath expression for the total number of pages. If not provided, pagination is controlled by `maximum_page` and `stop_after_empty_page`</li><li>`maximum_page` (int) - optional maximum page number. Stops pagination once this page is reached</li><li>`stop_after_empty_page` (bool) - Whether pagination should stop when a page contains no result items. Defaults to `True`</li></ul> |
-| `cursor` | [JSONResponseCursorPaginator](../../../general-usage/http/rest-client.md#jsonresponsecursorpaginator) | The pagination is based on a cursor parameter, with the value of the cursor in the response body (JSON).<br/>*Parameters:*<ul><li>`cursor_path` (str) - the JSONPath to the cursor value. Defaults to "cursors.next"</li><li>`cursor_param` (str) - the query parameter name for the cursor. Defaults to "after"</li></ul> |
+| `cursor` | [JSONResponseCursorPaginator](../../../general-usage/http/rest-client.md#jsonresponsecursorpaginator) | The pagination is based on a cursor parameter, with the value of the cursor in the response body (JSON).<br/>*Parameters:*<ul><li>`cursor_path` (str) - the JSONPath to the cursor value. Defaults to "cursors.next"</li><li>`cursor_param` (str) - the query parameter name for the cursor. Defaults to "cursor" if neither `cursor_param` nor `cursor_body_path` is provided.</li><li>`cursor_body_path` (str, optional) - the JSONPath to place the cursor in the request body.</li></ul>Note: You must provide either `cursor_param` or `cursor_body_path`, but not both. If neither is provided, `cursor_param` will default to "cursor". |
 | `single_page` | SinglePagePaginator | The response will be interpreted as a single-page response, ignoring possible pagination metadata. |
 | `auto` | `None` | Explicitly specify that the source should automatically detect the pagination method. |
 
@@ -519,34 +505,7 @@ For APIs that require authentication to access their endpoints, the REST API sou
 
 #### Quick example
 
-One of the most common methods is token-based authentication (also known as Bearer token authentication). To authenticate using this method, you can use the following shortcut:
-
-```py
-{
-    "client": {
-        # ...
-        "auth": {
-            "token": dlt.secrets["your_api_token"],
-        },
-        # ...
-    },
-}
-```
-
-:::warning
-Make sure to store your access tokens and other sensitive information in the `secrets.toml` file and never commit it to the version control system.
-:::
-
-Available authentication types:
-
-| Authentication class | String Alias (`type`) | Description |
-| ------------------- | ----------- | ----------- |
-| [BearerTokenAuth](../../../general-usage/http/rest-client.md#bearer-token-authentication) | `bearer` | Bearer token authentication. |
-| [HTTPBasicAuth](../../../general-usage/http/rest-client.md#http-basic-authentication) | `http_basic` | Basic HTTP authentication. |
-| [APIKeyAuth](../../../general-usage/http/rest-client.md#api-key-authentication) | `api_key` | API key authentication with key defined in the query parameters or in the headers. |
-| [OAuth2ClientCredentials](../../../general-usage/http/rest-client.md#oauth20-authorization) | `oauth2_client_credentials` | OAuth 2.0 authorization with a temporary access token obtained from the authorization server. |
-
-To specify the authentication configuration, use the `auth` field in the [client](#client) configuration:
+Here's how to configure authentication using a bearer token:
 
 ```py
 {
@@ -576,6 +535,20 @@ config = {
 }
 ```
 
+Since token-based authentication is one of the most common methods, you can use the following shortcut:
+
+```py
+{
+    "client": {
+        # ...
+        "auth": {
+            "token": dlt.secrets["your_api_token"],
+        },
+        # ...
+    },
+}
+```
+
 :::warning
 Make sure to store your access tokens and other sensitive information in the `secrets.toml` file and never commit it to the version control system.
 :::
@@ -587,7 +560,7 @@ Available authentication types:
 | `bearer` | [BearerTokenAuth](../../../general-usage/http/rest-client.md#bearer-token-authentication) | Bearer token authentication.<br/>Parameters:<ul><li>`token` (str)</li></ul> |
 | `http_basic` | [HTTPBasicAuth](../../../general-usage/http/rest-client.md#http-basic-authentication) | Basic HTTP authentication.<br/>Parameters:<ul><li>`username` (str)</li><li>`password` (str)</li></ul> |
 | `api_key` | [APIKeyAuth](../../../general-usage/http/rest-client.md#api-key-authentication) | API key authentication with key defined in the query parameters or in the headers. <br/>Parameters:<ul><li>`name` (str) - the name of the query parameter or header</li><li>`api_key` (str) - the API key value</li><li>`location` (str, optional) - the location of the API key in the request. Can be `query` or `header`. Default is `header`</li></ul> |
-| `oauth2_client_credentials` | [OAuth2ClientCredentials](../../../general-usage/http/rest-client.md#oauth20-authorization)) | OAuth 2.0 Client Credentials authorization for server-to-server communication without user consent. <br/>Parameters:<ul><li>`access_token` (str, optional) - the temporary token. Usually not provided here because it is automatically obtained from the server by exchanging `client_id` and `client_secret`. Default is `None`</li><li>`access_token_url` (str) - the URL to request the `access_token` from</li><li>`client_id` (str) - identifier for your app. Usually issued via a developer portal</li><li>`client_secret` (str) - client credential to obtain authorization. Usually issued via a developer portal</li><li>`access_token_request_data` (dict, optional) - A dictionary with data required by the authorization server apart from the `client_id`, `client_secret`, and `"grant_type": "client_credentials"`. Defaults to `None`</li><li>`default_token_expiration` (int, optional) - The time in seconds after which the temporary access token expires. Defaults to 3600.</li><li>`session` (requests.Session, optional) - a custom session object. Mostly used for testing</li></ul> |
+| `oauth2_client_credentials` | [OAuth2ClientCredentials](../../../general-usage/http/rest-client.md#oauth-20-authorization) | OAuth 2.0 Client Credentials authorization for server-to-server communication without user consent. <br/>Parameters:<ul><li>`access_token` (str, optional) - the temporary token. Usually not provided here because it is automatically obtained from the server by exchanging `client_id` and `client_secret`. Default is `None`</li><li>`access_token_url` (str) - the URL to request the `access_token` from</li><li>`client_id` (str) - identifier for your app. Usually issued via a developer portal</li><li>`client_secret` (str) - client credential to obtain authorization. Usually issued via a developer portal</li><li>`access_token_request_data` (dict, optional) - A dictionary with data required by the authorization server apart from the `client_id`, `client_secret`, and `"grant_type": "client_credentials"`. Defaults to `None`</li><li>`default_token_expiration` (int, optional) - The time in seconds after which the temporary access token expires. Defaults to 3600.</li><li>`session` (requests.Session, optional) - a custom session object. Mostly used for testing</li></ul> |
 
 
 For more complex authentication methods, you can implement a [custom authentication class](../../../general-usage/http/rest-client.md#implementing-custom-authentication) and use it in the configuration.
@@ -613,9 +586,127 @@ register_auth("custom_auth", CustomAuth)
 
 ### Define resource relationships
 
-When you have a resource that depends on another resource, you can define the relationship using the `resolve` configuration. This allows you to link one or more path parameters in the child resource to fields in the parent resource's data.
+When you have a resource that depends on another resource (for example, you must fetch a parent resource to get an ID needed to fetch the child), you can reference fields in the parent resource using special placeholders.
+This allows you to link one or more [path](#via-request-path), [query string](#via-query-string-parameters) or [JSON body](#via-json-body) parameters in the child resource to fields in the parent resource's data.
 
-In the GitHub example, the `issue_comments` resource depends on the `issues` resource. The `issue_number` parameter in the `issue_comments` endpoint configuration is resolved from the `number` field of the `issues` resource:
+#### Via request path
+
+In the GitHub example, the `issue_comments` resource depends on the `issues` resource. The `resources.issues.number` placeholder links the `number` field in the `issues` resource data to the current request's path parameter.
+
+```py
+{
+    "resources": [
+        {
+            "name": "issues",
+            "endpoint": {
+                "path": "issues",
+                # ...
+            },
+        },
+        {
+            "name": "issue_comments",
+            "endpoint": {
+                "path": "issues/{resources.issues.number}/comments",
+            },
+            "include_from_parent": ["id"],
+        },
+    ],
+}
+```
+
+This configuration tells the source to get issue numbers from the `issues` resource data and use them to fetch comments for each issue number. So for each issue item, `"{resources.issues.number}"` is replaced by the issue number in the request path.
+For example, if the `issues` resource yields the following data:
+
+```json
+[
+    {"id": 1, "number": 123},
+    {"id": 2, "number": 124},
+    {"id": 3, "number": 125}
+]
+```
+
+The `issue_comments` resource will make requests to the following endpoints:
+
+- `issues/123/comments`
+- `issues/124/comments`
+- `issues/125/comments`
+
+The syntax for the placeholder is `resources.<parent_resource_name>.<field_name>`.
+
+#### Via query string parameters
+
+The placeholder syntax can also be used in the query string parameters. For example, in an API which lets you fetch a blog posts (via `/posts`) and their comments (via `/comments?post_id=<post_id>`), you can define a resource `posts` and a resource `post_comments` which depends on the `posts` resource. You can then reference the `id` field from the `posts` resource in the `post_comments` resource:
+
+```py
+{
+    "resources": [
+        "posts",
+        {
+            "name": "post_comments",
+            "endpoint": {
+                "path": "comments",
+                "params": {
+                    "post_id": "{resources.posts.id}",
+                },
+            },
+        },
+    ],
+}
+```
+
+Similar to the GitHub example above, if the `posts` resource yields the following data:
+
+```json
+[
+    {"id": 1, "title": "Post 1"},
+    {"id": 2, "title": "Post 2"},
+    {"id": 3, "title": "Post 3"}
+]
+```
+
+The `post_comments` resource will make requests to the following endpoints:
+
+- `comments?post_id=1`
+- `comments?post_id=2`
+- `comments?post_id=3`
+
+#### Via JSON body
+
+In many APIs, you can send a complex query or configuration through a POST request's JSON body rather than in the request path or query parameters. For example, consider an imaginary `/search` endpoint that supports multiple filters and settings. You might have a parent resource `posts` with each post's `id` and a second resource, `post_details`, that uses `id` to perform a custom search.
+
+In the example below we reference the `posts` resource's `id` field in the JSON body via placeholders:
+
+```py
+{
+    "resources": [
+        "posts",
+        {
+            "name": "post_details",
+            "endpoint": {
+                "path": "search",
+                "method": "POST",
+                "json": {
+                    "filters": {
+                        "id": "{resources.posts.id}",
+                    },
+                    "order": "desc",
+                    "limit": 5,
+                }
+            },
+        },
+    ],
+}
+```
+
+
+#### Legacy syntax: `resolve` field in parameter configuration
+
+:::warning
+`resolve` works only for path parameters. The new placeholder syntax is more flexible and recommended for new configurations.
+:::
+
+An alternative, legacy way to define resource relationships is to use the `resolve` field in the parameter configuration.
+Here's the same example as above that uses the `resolve` field:
 
 ```py
 {
@@ -645,22 +736,6 @@ In the GitHub example, the `issue_comments` resource depends on the `issues` res
 }
 ```
 
-This configuration tells the source to get issue numbers from the `issues` resource and use them to fetch comments for each issue. So if the `issues` resource yields the following data:
-
-```json
-[
-    {"id": 1, "number": 123},
-    {"id": 2, "number": 124},
-    {"id": 3, "number": 125}
-]
-```
-
-The `issue_comments` resource will make requests to the following endpoints:
-
-- `issues/123/comments`
-- `issues/124/comments`
-- `issues/125/comments`
-
 The syntax for the `resolve` field in parameter configuration is:
 
 ```py
@@ -675,7 +750,6 @@ The syntax for the `resolve` field in parameter configuration is:
 
 The `field` value can be specified as a [JSONPath](https://github.com/h2non/jsonpath-ng?tab=readme-ov-file#jsonpath-syntax) to select a nested field in the parent resource data. For example: `"field": "items[0].id"`.
 
-Under the hood, dlt handles this by using a [transformer resource](../../../general-usage/resource.md#process-resources-with-dlttransformer).
 
 #### Resolving multiple path parameters from a parent resource
 
@@ -891,20 +965,13 @@ You can combine multiple processing steps to achieve complex transformations:
 Some APIs provide a way to fetch only new or changed data (most often by using a timestamp field like `updated_at`, `created_at`, or incremental IDs).
 This is called [incremental loading](../../../general-usage/incremental-loading.md) and is very useful as it allows you to reduce the load time and the amount of data transferred.
 
-When the API endpoint supports incremental loading, you can configure dlt to load only the new or changed data using these two methods:
-
-1. Defining a special parameter in the `params` section of the [endpoint configuration](#endpoint-configuration).
-2. Specifying the `incremental` field in the endpoint configuration.
-
-Let's start with the first method.
-
-### Incremental loading in `params`
+Let's continue with our imaginary blog API example to understand incremental loading with query parameters.
 
 Imagine we have the following endpoint `https://api.example.com/posts` and it:
-1. Accepts a `created_since` query parameter to fetch posts created after a certain date.
+1. Accepts a `created_since` query parameter to fetch blog posts created after a certain date.
 2. Returns a list of posts with the `created_at` field for each post.
 
-For example, if we query the endpoint with `https://api.example.com/posts?created_since=2024-01-25`, we get the following response:
+For example, if we query the endpoint with GET request `https://api.example.com/posts?created_since=2024-01-25`, we get the following response:
 
 ```json
 {
@@ -916,7 +983,131 @@ For example, if we query the endpoint with `https://api.example.com/posts?create
 }
 ```
 
-To enable incremental loading for this endpoint, you can use the following endpoint configuration:
+When the API endpoint supports incremental loading, you can configure dlt to load only the new or changed data using these three methods:
+
+1. Using [placeholders for incremental loading](#using-placeholders-for-incremental-loading)
+2. Defining a special parameter in the `params` section of the [endpoint configuration](#endpoint-configuration) (DEPRECATED)
+3. Using the `incremental` field in the [endpoint configuration](#endpoint-configuration) with the `start_param` field (DEPRECATED)
+
+:::caution
+The last two methods are deprecated and will be removed in a future dlt version.
+:::
+
+### Using placeholders for incremental loading
+
+The most flexible way to configure incremental loading is to use placeholders in the request configuration along with the `incremental` section.
+Here's how it works:
+
+1. Define the `incremental` section in the [endpoint configuration](#endpoint-configuration) to specify the cursor path (where to find the incremental value in the response) and initial value (the value to start the incremental loading from).
+2. Use the placeholder `{incremental.start_value}` in the request configuration to reference the incremental value.
+
+Let's take the example from the previous section and configure it using placeholders:
+
+```py
+{
+    "path": "posts",
+    "data_selector": "results",
+    "params": {
+        "created_since": "{incremental.start_value}",  # Uses cursor value in query parameter
+    },
+    "incremental": {
+        "cursor_path": "created_at",
+        "initial_value": "2024-01-25T00:00:00Z",
+    },
+}
+```
+
+When you first run this pipeline, dlt will:
+1. Replace `{incremental.start_value}` with `2024-01-25T00:00:00Z` (the initial value)
+2. Make a GET request to `https://api.example.com/posts?created_since=2024-01-25T00:00:00Z`
+3. Parse the response (e.g., posts with created_at values like "2024-01-26", "2024-01-27", "2024-01-28")
+4. Track the maximum value found in the "created_at" field (in this case, "2024-01-28")
+
+On the next pipeline run, dlt will:
+1. Replace `{incremental.start_value}` with "2024-01-28" (the last seen maximum value)
+2. Make a GET request to `https://api.example.com/posts?created_since=2024-01-28`
+3. The API will only return posts created on or after January 28th
+
+Let's break down the configuration:
+1. We explicitly set `data_selector` to `"results"` to select the list of posts from the response. This is optional; if not set, dlt will try to auto-detect the data location.
+2. We define the `created_since` parameter in `params` section and use the placeholder `{incremental.start_value}` to reference the incremental value.
+
+Placeholders are versatile and can be used in various request components. Here are some examples:
+
+#### In JSON body (for POST requests)
+
+If the API lets you filter the data by a range of dates (e.g. `fromDate` and `toDate`), you can use the placeholder in the JSON body:
+
+```py
+{
+    "path": "posts/search",
+    "method": "POST",
+    "json": {
+        "filters": {
+            "fromDate": "{incremental.start_value}",  # In JSON body
+            "toDate": "2024-03-25"
+        },
+        "limit": 1000
+    },
+    "incremental": {
+        "cursor_path": "created_at",
+        "initial_value": "2024-01-25T00:00:00Z",
+    },
+}
+```
+
+#### In path parameters
+
+Some APIs use path parameters to filter the data:
+
+```py
+{
+    "path": "posts/since/{incremental.start_value}/list",  # In URL path
+    "incremental": {
+        "cursor_path": "created_at",
+        "initial_value": "2024-01-25",
+    },
+}
+```
+
+#### In request headers
+
+It's not so common, but you can also use placeholders in the request headers:
+
+```py
+{
+    "path": "posts",
+    "headers": {
+        "X-Since-Timestamp": "{incremental.start_value}"  # In custom header
+    },
+    "incremental": {
+        "cursor_path": "created_at",
+        "initial_value": "2024-01-25T00:00:00Z",
+    },
+}
+```
+
+You can also use different placeholder variants depending on your needs:
+
+| Placeholder | Description |
+| ----------- | ----------- |
+| `{incremental.start_value}` | The value to use as the starting point for this request (either the initial value or the last tracked maximum value) |
+| `{incremental.initial_value}` | Always uses the initial value specified in the configuration |
+| `{incremental.last_value}` | The last seen value (same as start_value in most cases, see the [incremental loading](../../../general-usage/incremental/cursor.md) guide for more details) |
+| `{incremental.end_value}` | The end value if specified in the configuration |
+
+
+### Legacy method: Incremental loading in `params` (DEPRECATED)
+
+:::caution
+DEPRECATED: This method is deprecated and will be removed in a future version. Use the [placeholder method](#using-placeholders-for-incremental-loading) instead.
+:::
+
+:::note
+This method only works for query string parameters. For other request parts (path, JSON body, headers), use the [placeholder method](#using-placeholders-for-incremental-loading).
+:::
+
+For query string parameters, you can also specify incremental loading directly in the `params` section:
 
 ```py
 {
@@ -932,13 +1123,7 @@ To enable incremental loading for this endpoint, you can use the following endpo
 }
 ```
 
-After you run the pipeline, dlt will keep track of the last `created_at` from all the posts fetched and use it as the `created_since` parameter in the next request.
-So in our case, the next request will be made to `https://api.example.com/posts?created_since=2024-01-28` to fetch only the new posts created after `2024-01-28`.
-
-Let's break down the configuration.
-
-1. We explicitly set `data_selector` to `"results"` to select the list of posts from the response. This is optional; if not set, dlt will try to auto-detect the data location.
-2. We define the `created_since` parameter as an incremental parameter with the following fields:
+Above we define the `created_since` parameter as an incremental parameter as:
 
 ```py
 {
@@ -950,13 +1135,19 @@ Let's break down the configuration.
 }
 ```
 
+The fields are:
+
 - `type`: The type of the parameter definition. In this case, it must be set to `incremental`.
 - `cursor_path`: The JSONPath to the field within each item in the list. The value of this field will be used in the next request. In the example above, our items look like `{"id": 1, "title": "Post 1", "created_at": "2024-01-26"}` so to track the created time, we set `cursor_path` to `"created_at"`. Note that the JSONPath starts from the root of the item (dict) and not from the root of the response.
 - `initial_value`: The initial value for the cursor. This is the value that will initialize the state of incremental loading. In this case, it's `2024-01-25`. The value type should match the type of the field in the data item.
 
-### Incremental loading using the `incremental` field
+### Incremental loading using the `incremental` field (DEPRECATED)
 
-The alternative method is to use the `incremental` field in the [endpoint configuration](#endpoint-configuration). This configuration is more powerful than the method shown above because it also allows you to specify not only the start parameter and value but also the end parameter and value for the incremental loading.
+:::caution
+DEPRECATED: This method is deprecated and will be removed in a future dlt version. Use the [placeholder method](#using-placeholders-for-incremental-loading) instead.
+:::
+
+Another alternative method is to use the `incremental` field in the [endpoint configuration](#endpoint-configuration) while specifying names of the query string parameters to be used as start and end conditions.
 
 Let's take the same example as above and configure it using the `incremental` field:
 
@@ -971,9 +1162,6 @@ Let's take the same example as above and configure it using the `incremental` fi
     },
 }
 ```
-
-Note that we specify the query parameter name `created_since` in the `start_param` field and not in the `params` section.
-
 The full available configuration for the `incremental` field is:
 
 ```py
@@ -998,9 +1186,9 @@ The fields are:
 - `end_value` (str): The end value for the cursor to stop the incremental loading. This is optional and can be omitted if you only need to track the start condition. If you set this field, `initial_value` needs to be set as well.
 - `convert` (callable): A callable that converts the cursor value into the format that the query parameter requires. For example, a UNIX timestamp can be converted into an ISO 8601 date or a date can be converted into `created_at+gt+{date}`.
 
-See the [incremental loading](../../../general-usage/incremental-loading.md#incremental-loading-with-a-cursor-field) guide for more details.
+See the [incremental loading](../../../general-usage/incremental/cursor.md) guide for more details.
 
-If you encounter issues with incremental loading, see the [troubleshooting section](../../../general-usage/incremental-loading.md#troubleshooting) in the incremental loading guide.
+If you encounter issues with incremental loading, see the [troubleshooting section](../../../general-usage/incremental/troubleshooting.md) in the incremental loading guide.
 
 ### Convert the incremental value before calling the API
 
@@ -1105,7 +1293,7 @@ Check the `paginator` field in the configuration. When not explicitly specified,
 
 #### Incremental loading not working
 
-See the [troubleshooting guide](../../../general-usage/incremental-loading.md#troubleshooting) for incremental loading issues.
+See the [troubleshooting guide](../../../general-usage/incremental/troubleshooting.md) for incremental loading issues.
 
 #### Getting HTTP 404 errors
 
@@ -1115,8 +1303,8 @@ Some APIs may return 404 errors for resources that do not exist or have no data.
 
 If you are experiencing 401 (Unauthorized) errors, this could indicate:
 
-- Incorrect authorization credentials. Verify credentials in the `secrets.toml`. Refer to [Secret and configs](../../../general-usage/credentials/setup#understanding-the-exceptions) for more information.
-- An incorrect authentication type. Consult the API documentation for the proper method. See the [authentication](#authentication) section for details. For some APIs, a [custom authentication method](../../../general-usage/http/rest-client.md#custom-authentication) may be required.
+- Incorrect authorization credentials. Verify credentials in the `secrets.toml`. Refer to [Secret and configs](../../../general-usage/credentials/setup#troubleshoot-configuration-errors) for more information.
+- An incorrect authentication type. Consult the API documentation for the proper method. See the [authentication](#authentication) section for details. For some APIs, a [custom authentication method](../../../general-usage/http/rest-client.md#implementing-custom-authentication) may be required.
 
 ### General guidelines
 

@@ -53,7 +53,99 @@ const sidebars = {
         'general-usage/pipeline',
         'general-usage/destination',
         'general-usage/state',
+        {
+          type: 'category',
+          label: 'Schema',
+          link: {
+            type: 'doc',
+            id: 'general-usage/schema',
+          },
+          items: [
+            'general-usage/schema-contracts',
+            'general-usage/schema-evolution',
+            'general-usage/naming-convention',
+            'walkthroughs/adjust-a-schema',
+          ]
+        },
         'general-usage/glossary'
+      ]
+    },
+    {
+      type: 'category',
+      label: 'dlt+',
+      link: {
+        type: 'doc',
+        id: 'plus/intro',
+      },
+      items: [
+        {
+          type: 'category',
+          label: 'Getting started',
+          items: [
+            'plus/getting-started/installation',
+            'plus/getting-started/tutorial',
+            'plus/getting-started/advanced_tutorial',
+          ]
+        },
+        {
+          type: 'category',
+          label: 'Core concepts',
+          items: [
+            'plus/core-concepts/project',
+            'plus/core-concepts/cache',
+            'plus/core-concepts/datasets',
+            'plus/core-concepts/profiles',
+          ]
+        },
+        {
+          type: 'category',
+          label: 'Sources & Destinations',
+          items: [
+            'plus/ecosystem/ms-sql',
+            'plus/ecosystem/iceberg',
+            'plus/ecosystem/delta',
+            'plus/ecosystem/snowflake_plus',
+          ]
+        },
+        {
+          type: 'category',
+          label: 'Features',
+          items: [
+            'plus/features/projects',
+            'plus/features/data-access',
+            {
+              type: 'category',
+              label: 'Local transformations',
+              link: {
+                type: 'doc',
+                id: 'plus/features/transformations/index',
+              },
+              items: [
+                'plus/features/transformations/setup',
+                'plus/features/transformations/dbt-transformations',
+                'plus/features/transformations/python-transformations',
+              ]
+            },
+            'plus/features/ai',
+            {
+              type: 'category',
+              label: 'Data quality & tests',
+              items: [
+                'plus/features/quality/tests',
+                'plus/features/quality/data-quality',
+              ]
+            },
+          ]
+        },
+        {
+          type: 'category',
+          label: 'Going to production',
+          items: [
+            'plus/production/runners',
+            'plus/production/observability',
+          ]
+        },
+        'plus/reference',
       ]
     },
     {
@@ -91,7 +183,7 @@ const sidebars = {
         },
         {
           type: 'category',
-          label: '30+ SQL Databases',
+          label: '30+ SQL databases',
           description: 'PostgreSQL, MySQL, MS SQL, BigQuery, Redshift, and more',
           link: {
             type: 'doc',
@@ -103,6 +195,7 @@ const sidebars = {
             'dlt-ecosystem/verified-sources/sql_database/usage',
             'dlt-ecosystem/verified-sources/sql_database/troubleshooting',
             'dlt-ecosystem/verified-sources/sql_database/advanced',
+            'walkthroughs/add-incremental-configuration',
           ]
         },
         {
@@ -168,6 +261,7 @@ const sidebars = {
         'dlt-ecosystem/destinations/clickhouse',
         'dlt-ecosystem/destinations/filesystem',
         'dlt-ecosystem/destinations/delta-iceberg',
+        'dlt-ecosystem/destinations/iceberg',
         'dlt-ecosystem/destinations/postgres',
         'dlt-ecosystem/destinations/redshift',
         'dlt-ecosystem/destinations/snowflake',
@@ -195,23 +289,66 @@ const sidebars = {
         'walkthroughs/create-a-pipeline',
         'walkthroughs/run-a-pipeline',
         {
+          type: "category",
+          label: "Build with LLMs",
+          link: {
+            type: 'generated-index',
+            title: 'Build with LLMs',
+            description: 'Learn to build dlt pipelines with LLMs',
+            slug: 'dlt-ecosystem/llm-tooling',
+          },
+          items: [
+            "dlt-ecosystem/llm-tooling/mcp-server",
+            "dlt-ecosystem/llm-tooling/cursor-restapi",
+          ]
+        },
+        {
           type: 'category',
-          label: 'Accessing loaded data',
+          label: 'Load data incrementally',
+          items: [
+            'general-usage/full-loading',
+            'general-usage/merge-loading',
+            'general-usage/incremental-loading',
+            'general-usage/incremental/cursor',
+            'general-usage/incremental/lag',
+            'general-usage/incremental/advanced-state',
+            'general-usage/incremental/troubleshooting',
+          ]
+        },
+        {
+          type: 'category',
+          label: 'Configure pipelines and credentials',
+           link: {
+            type: 'doc',
+            id: 'general-usage/credentials/index',
+          },
+          items: [
+            'general-usage/credentials/setup',
+            'general-usage/credentials/advanced',
+            'general-usage/credentials/complex_types',
+            // Unsure item
+            'walkthroughs/add_credentials'
+          ]
+        },
+        {
+          type: 'category',
+          label: 'Access loaded data',
            link: {
             type: 'doc',
             id: 'general-usage/dataset-access/index',
           },
           items: [
             'general-usage/dataset-access/streamlit',
+            'general-usage/dataset-access/marimo',
             'general-usage/dataset-access/dataset',
             'general-usage/dataset-access/ibis-backend',
             'general-usage/dataset-access/sql-client',
-            'general-usage/dataset-access/data-quality-dashboard',
+            'general-usage/destination-tables',
           ]
         },
         {
           type: 'category',
-          label: 'Transforming data',
+          label: 'Transform data',
           link: {
             type: 'doc',
             id: 'dlt-ecosystem/transformations/index',
@@ -227,46 +364,15 @@ const sidebars = {
             },
             'dlt-ecosystem/transformations/python',
             'dlt-ecosystem/transformations/sql',
-            'general-usage/customising-pipelines/renaming_columns',
-            'general-usage/customising-pipelines/pseudonymizing_columns',
-            'general-usage/customising-pipelines/removing_columns'
-          ]
-        },
-        {
-          type: 'category',
-          label: 'Configuration and secrets',
-           link: {
-            type: 'doc',
-            id: 'general-usage/credentials/index',
-          },
-          items: [
-            'general-usage/credentials/setup',
-            'general-usage/credentials/advanced',
-            'general-usage/credentials/complex_types',
-            // Unsure item
-            'walkthroughs/add_credentials'
-          ]
-        },
-        {
-          type: 'category',
-          label: 'Schema',
-          link: {
-            type: 'doc',
-            id: 'general-usage/schema',
-          },
-          items: [
-            'general-usage/schema-contracts',
-            'general-usage/schema-evolution',
-            'walkthroughs/adjust-a-schema',
-          ]
-        },
-        {
-          type: 'category',
-          label: 'Loading Behavior',
-          items: [
-            'general-usage/incremental-loading',
-            'walkthroughs/add-incremental-configuration',
-            'general-usage/full-loading',
+            {
+              type: 'category',
+              label: 'Transform before load',
+              items: [
+                'general-usage/customising-pipelines/renaming_columns',
+                'general-usage/customising-pipelines/pseudonymizing_columns',
+                'general-usage/customising-pipelines/removing_columns',
+              ]
+            }
           ]
         },
       ]
@@ -296,6 +402,7 @@ const sidebars = {
             'walkthroughs/deploy-a-pipeline/deploy-with-dagster',
             'walkthroughs/deploy-a-pipeline/deploy-with-prefect',
             'walkthroughs/deploy-a-pipeline/deploy-with-modal',
+            'walkthroughs/deploy-a-pipeline/deploy-with-orchestra',
           ]
         },
         {
@@ -317,7 +424,13 @@ const sidebars = {
         },
       ]
     },
-    'reference/performance',
+    {
+      type: 'category',
+      label: 'Optimizing dlt',
+      items: [
+        'reference/performance',
+      ],
+    },
     {
       type: 'category',
       label: 'Code examples',
@@ -345,9 +458,6 @@ const sidebars = {
       items: [
         'reference/command-line-interface',
         'reference/telemetry',
-        // Unsure item
-        'general-usage/destination-tables',
-        'general-usage/naming-convention',
         'dlt-ecosystem/staging',
         {
           type: 'category',
@@ -380,6 +490,7 @@ const sidebars = {
             'dlt-ecosystem/table-formats/iceberg',
           ]
         },
+        'general-usage/dataset-access/data-quality-dashboard',
         'reference/frequently-asked-questions',
       ],
     },

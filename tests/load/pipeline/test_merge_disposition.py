@@ -1,7 +1,7 @@
 from copy import copy
 import pytest
 import random
-from typing import List
+from typing import List, cast
 import pytest
 import yaml
 
@@ -17,7 +17,7 @@ from dlt.common.schema.exceptions import (
     UnboundColumnException,
     CannotCoerceNullException,
 )
-from dlt.common.schema.typing import TLoaderMergeStrategy
+from dlt.common.schema.typing import TLoaderMergeStrategy, TTableFormat
 from dlt.common.typing import StrAny
 from dlt.common.utils import digest128
 from dlt.common.destination import AnyDestination, DestinationCapabilitiesContext
@@ -25,10 +25,12 @@ from dlt.common.destination.exceptions import DestinationCapabilitiesException
 from dlt.common.libs.pyarrow import row_tuples_to_arrow
 
 from dlt.extract import DltResource
+from dlt.extract.hints import TResourceHints
 from dlt.sources.helpers.transform import skip_first, take_first
 from dlt.pipeline.exceptions import PipelineStepFailed
 from dlt.normalize.exceptions import NormalizeJobFailed
 
+from tests.load.pipeline.utils import skip_if_unsupported_merge_strategy
 from tests.pipeline.utils import (
     assert_load_info,
     load_table_counts,
@@ -37,25 +39,13 @@ from tests.pipeline.utils import (
     assert_records_as_set,
 )
 from tests.load.utils import (
+    AWS_BUCKET,
     normalize_storage_table_cols,
     destinations_configs,
     DestinationTestConfiguration,
     FILE_BUCKET,
-    AZ_BUCKET,
-    SFTP_BUCKET,
+    ABFS_BUCKET,
 )
-
-
-def skip_if_not_supported(
-    merge_strategy: TLoaderMergeStrategy,
-    destination: AnyDestination,
-) -> None:
-    # resolve_merge_strategy
-    if merge_strategy not in destination.capabilities().supported_merge_strategies:
-        pytest.skip(
-            f"`{merge_strategy}` merge strategy not supported for `{destination.destination_name}`"
-            " destination."
-        )
 
 
 @pytest.mark.essential
@@ -66,19 +56,19 @@ def skip_if_not_supported(
         all_buckets_filesystem_configs=True,
         table_format_filesystem_configs=True,
         supports_merge=True,
-        bucket_subset=(FILE_BUCKET, AZ_BUCKET),  # test one local, one remote
+        bucket_subset=(FILE_BUCKET, AWS_BUCKET),  # test one local, one remote
     ),
     ids=lambda x: x.name,
 )
 @pytest.mark.parametrize("merge_strategy", ("delete-insert", "upsert"))
-def test_merge_on_keys_in_schema(
+def test_merge_on_keys_in_schema_nested_hints(
     destination_config: DestinationTestConfiguration,
     merge_strategy: TLoaderMergeStrategy,
 ) -> None:
     """Tests merge disposition on an annotated schema, no annotations on resource"""
-    p = destination_config.setup_pipeline("eth_2", dev_mode=True)
+    skip_if_unsupported_merge_strategy(destination_config, merge_strategy)
 
-    skip_if_not_supported(merge_strategy, p.destination)
+    p = destination_config.setup_pipeline("eth_2", dev_mode=True)
 
     with open("tests/common/cases/schemas/eth/ethereum_schema_v11.yml", "r", encoding="utf-8") as f:
         schema = dlt.Schema.from_dict(yaml.safe_load(f))
@@ -88,13 +78,23 @@ def test_merge_on_keys_in_schema(
         del schema.tables["blocks__uncles"]["x-normalizer"]
         assert not has_table_seen_data(schema.tables["blocks__uncles"])
 
+    hints: TResourceHints = {
+        "write_disposition": {"disposition": "merge", "strategy": merge_strategy},
+        "table_format": cast(TTableFormat, destination_config.table_format),
+    }
+    # NOTE: setting primary key will break nesting chain
+    nested_hints = {
+        ("transactions",): {**hints, "primary_key": ("block_number", "transaction_index")},
+        ("transactions", "logs"): {
+            **hints,
+            "primary_key": ("block_number", "transaction_index", "log_index"),
+        },
+    }
+
     @dlt.source(schema=schema)
     def ethereum(slice_: slice = None):
-        @dlt.resource(
-            table_name="blocks",
-            write_disposition={"disposition": "merge", "strategy": merge_strategy},
-        )
-        def data():
+        @dlt.resource(**hints, nested_hints=nested_hints)  # type: ignore[call-overload]
+        def blocks():
             with open(
                 "tests/normalize/cases/ethereum.blocks.9c1d9b504ea240a482b007788d5cd61c_2.json",
                 "r",
@@ -102,19 +102,7 @@ def test_merge_on_keys_in_schema(
             ) as f:
                 yield json.load(f) if slice_ is None else json.load(f)[slice_]
 
-        # also modify the child tables (not nested)
-        schema_ = dlt.current.source_schema()
-        blocks__transactions = schema_.tables["blocks__transactions"]
-        blocks__transactions["write_disposition"] = "merge"
-        blocks__transactions["x-merge-strategy"] = merge_strategy  # type: ignore[typeddict-unknown-key]
-        blocks__transactions["table_format"] = destination_config.table_format
-
-        blocks__transactions__logs = schema_.tables["blocks__transactions__logs"]
-        blocks__transactions__logs["write_disposition"] = "merge"
-        blocks__transactions__logs["x-merge-strategy"] = merge_strategy  # type: ignore[typeddict-unknown-key]
-        blocks__transactions__logs["table_format"] = destination_config.table_format
-
-        return data
+        return blocks()
 
     # take only the first block. the first block does not have uncles so this table should not be created and merged
     info = p.run(
@@ -159,9 +147,9 @@ def test_merge_on_keys_in_schema(
     destinations_configs(
         default_sql_configs=True,
         local_filesystem_configs=True,
-        table_format_filesystem_configs=True,
+        table_format_local_configs=True,
         supports_merge=True,
-        bucket_subset=(FILE_BUCKET),
+        bucket_subset=(FILE_BUCKET,),
     ),
     ids=lambda x: x.name,
 )
@@ -170,9 +158,9 @@ def test_merge_record_updates(
     destination_config: DestinationTestConfiguration,
     merge_strategy: TLoaderMergeStrategy,
 ) -> None:
-    p = destination_config.setup_pipeline("test_merge_record_updates", dev_mode=True)
+    skip_if_unsupported_merge_strategy(destination_config, merge_strategy)
 
-    skip_if_not_supported(merge_strategy, p.destination)
+    p = destination_config.setup_pipeline("test_merge_record_updates", dev_mode=True)
 
     @dlt.resource(
         table_name="parent",
@@ -182,10 +170,10 @@ def test_merge_record_updates(
     def r(data):
         yield data
 
-    # initial load
+    # initial load, also use primary key is that must be normalized "ID" -> "id"
     run_1 = [
-        {"id": 1, "foo": 1, "child": [{"bar": 1, "grandchild": [{"baz": 1}]}]},
-        {"id": 2, "foo": 1, "child": [{"bar": 1, "grandchild": [{"baz": 1}]}]},
+        {"ID": 1, "foo": 1, "child": [{"bar": 1, "grandchild": [{"baz": 1}]}]},
+        {"ID": 2, "foo": 1, "child": [{"bar": 1, "grandchild": [{"baz": 1}]}]},
     ]
     info = p.run(r(run_1), **destination_config.run_kwargs)
     assert_load_info(info)
@@ -273,9 +261,126 @@ def test_merge_record_updates(
     destinations_configs(
         default_sql_configs=True,
         local_filesystem_configs=True,
-        table_format_filesystem_configs=True,
+        table_format_local_configs=True,
         supports_merge=True,
-        bucket_subset=(FILE_BUCKET),
+        subset=("postgres", "snowflake", "filesystem", "iceberg"),
+    ),
+    ids=lambda x: x.name,
+)
+@pytest.mark.parametrize("merge_strategy", ("delete-insert", "upsert"))
+def test_merge_primary_key_normalization(
+    destination_config: DestinationTestConfiguration,
+    merge_strategy: TLoaderMergeStrategy,
+) -> None:
+    skip_if_unsupported_merge_strategy(destination_config, merge_strategy)
+    p = destination_config.setup_pipeline("test_merge_record_updates", dev_mode=True)
+
+    @dlt.resource(
+        table_name="parent",
+        write_disposition={"disposition": "merge", "strategy": merge_strategy},
+        primary_key=("id", "TxId"),
+    )
+    def r(data):
+        yield data
+
+    # initial load, here we check a bug where normalized primary_key columns were checked against
+    # not normalized source data, missing values were ignored leading to duplicate keys
+    # on postgres we have PK violation
+    run_1 = [
+        {"ID": 1, "TxId": "tx1🚀3", "child": [{"bar": 1, "grandchild": [{"baz": 1}]}]},
+        {"ID": 1, "TxId": "tx2Ü+😎üß", "child": [{"bar": 1, "grandchild": [{"baz": 1}]}]},
+    ]
+    info = p.run(r(run_1), **destination_config.run_kwargs)
+    assert_load_info(info)
+    assert load_table_counts(p, "parent", "parent__child", "parent__child__grandchild") == {
+        "parent": 2,
+        "parent__child": 2,
+        "parent__child__grandchild": 2,
+    }
+    if merge_strategy == "delete-insert":
+        tables = load_tables_to_dicts(p, "parent", exclude_system_cols=True)
+        assert_records_as_set(
+            tables["parent"],
+            [
+                {"id": 1, "tx_id": "tx1🚀3"},
+                {"id": 1, "tx_id": "tx2Ü+😎üß"},
+            ],
+        )
+    else:
+        tables = load_tables_to_dicts(
+            p, "parent", "parent__child", "parent__child__grandchild", exclude_system_cols=False
+        )
+        # remove _dlt_load_id
+        parent_data = [
+            {k: v for k, v in parent_dict.items() if k != "_dlt_load_id"}
+            for parent_dict in tables["parent"]
+        ]
+        # _dlt_id is created deterministically from values of the PK so we can hardcode it
+        # NOTE: this should NEVER change or you will break user data that is already loaded
+        assert_records_as_set(
+            parent_data,
+            [
+                {"_dlt_id": "19GAeLNivYhDqg", "id": 1, "tx_id": "tx1🚀3"},
+                {"_dlt_id": "wg/EKJyC+CXo/g", "id": 1, "tx_id": "tx2Ü+😎üß"},
+            ],
+        )
+        child_data = [
+            {k: v for k, v in dict_.items() if k != "_dlt_load_id"}
+            for dict_ in tables["parent__child"]
+        ]
+        assert_records_as_set(
+            child_data,
+            [
+                {
+                    "bar": 1,
+                    "_dlt_root_id": "19GAeLNivYhDqg",
+                    "_dlt_parent_id": "19GAeLNivYhDqg",
+                    "_dlt_list_idx": 0,
+                    "_dlt_id": "hhWFugO13PeLBQ",
+                },
+                {
+                    "bar": 1,
+                    "_dlt_root_id": "wg/EKJyC+CXo/g",
+                    "_dlt_parent_id": "wg/EKJyC+CXo/g",
+                    "_dlt_list_idx": 0,
+                    "_dlt_id": "U+o+nLvOjp5DLA",
+                },
+            ],
+        )
+        # grandchild refers to child via parent_id and to root table via root_id, all ids are deterministic for upsert
+        grandchild_data = [
+            {k: v for k, v in dict_.items() if k != "_dlt_load_id"}
+            for dict_ in tables["parent__child__grandchild"]
+        ]
+        assert_records_as_set(
+            grandchild_data,
+            [
+                {
+                    "baz": 1,
+                    "_dlt_root_id": "19GAeLNivYhDqg",
+                    "_dlt_parent_id": "hhWFugO13PeLBQ",
+                    "_dlt_list_idx": 0,
+                    "_dlt_id": "rsgPU8Q0nJ4QVg",
+                },
+                {
+                    "baz": 1,
+                    "_dlt_root_id": "wg/EKJyC+CXo/g",
+                    "_dlt_parent_id": "U+o+nLvOjp5DLA",
+                    "_dlt_list_idx": 0,
+                    "_dlt_id": "8anfRKWjVjQ7ag",
+                },
+            ],
+        )
+
+
+@pytest.mark.essential
+@pytest.mark.parametrize(
+    "destination_config",
+    destinations_configs(
+        default_sql_configs=True,
+        local_filesystem_configs=True,
+        table_format_local_configs=True,
+        supports_merge=True,
     ),
     ids=lambda x: x.name,
 )
@@ -284,11 +389,11 @@ def test_merge_nested_records_inserted_deleted(
     destination_config: DestinationTestConfiguration,
     merge_strategy: TLoaderMergeStrategy,
 ) -> None:
+    skip_if_unsupported_merge_strategy(destination_config, merge_strategy)
+
     p = destination_config.setup_pipeline(
         "test_merge_nested_records_inserted_deleted", dev_mode=True
     )
-
-    skip_if_not_supported(merge_strategy, p.destination)
 
     @dlt.resource(
         table_name="parent",
@@ -410,9 +515,8 @@ def test_merge_nested_records_inserted_deleted(
     destinations_configs(
         default_sql_configs=True,
         local_filesystem_configs=True,
-        table_format_filesystem_configs=True,
+        table_format_local_configs=True,
         supports_merge=True,
-        bucket_subset=(FILE_BUCKET),
     ),
     ids=lambda x: x.name,
 )
@@ -421,11 +525,11 @@ def test_bring_your_own_dlt_id(
     destination_config: DestinationTestConfiguration,
     merge_strategy: TLoaderMergeStrategy,
 ) -> None:
+    skip_if_unsupported_merge_strategy(destination_config, merge_strategy)
+
     p = destination_config.setup_pipeline(
         "test_merge_nested_records_inserted_deleted", dev_mode=True
     )
-
-    skip_if_not_supported(merge_strategy, p.destination)
 
     # sets _dlt_id as both primary key and row key.
     @dlt.resource(
@@ -517,9 +621,8 @@ def test_bring_your_own_dlt_id(
     destinations_configs(
         default_sql_configs=True,
         local_filesystem_configs=True,
-        table_format_filesystem_configs=True,
+        table_format_local_configs=True,
         supports_merge=True,
-        bucket_subset=(FILE_BUCKET),
     ),
     ids=lambda x: x.name,
 )
@@ -528,8 +631,9 @@ def test_merge_on_ad_hoc_primary_key(
     destination_config: DestinationTestConfiguration,
     merge_strategy: TLoaderMergeStrategy,
 ) -> None:
+    skip_if_unsupported_merge_strategy(destination_config, merge_strategy)
+
     p = destination_config.setup_pipeline("github_1", dev_mode=True)
-    skip_if_not_supported(merge_strategy, p.destination)
 
     @dlt.resource(
         table_name="issues",
@@ -585,7 +689,9 @@ def github():
 
 @pytest.mark.essential
 @pytest.mark.parametrize(
-    "destination_config", destinations_configs(default_sql_configs=True), ids=lambda x: x.name
+    "destination_config",
+    destinations_configs(default_sql_configs=True, supports_merge=True),
+    ids=lambda x: x.name,
 )
 def test_merge_source_compound_keys_and_changes(
     destination_config: DestinationTestConfiguration,
@@ -702,7 +808,11 @@ def test_merge_no_merge_keys(destination_config: DestinationTestConfiguration) -
 @pytest.mark.parametrize(
     "destination_config",
     destinations_configs(
-        default_sql_configs=True, with_file_format="parquet", local_filesystem_configs=True
+        default_sql_configs=True,
+        with_file_format="parquet",
+        local_filesystem_configs=True,
+        table_format_local_configs=True,
+        supports_merge=True,
     ),
     ids=lambda x: x.name,
 )
@@ -723,7 +833,7 @@ def test_pipeline_load_parquet(destination_config: DestinationTestConfiguration)
     assert_load_info(info)
     # make sure it was parquet or sql transforms
     expected_formats = ["parquet"]
-    if p.staging:
+    if p.staging or destination_config.table_format:
         # allow references if staging is present
         expected_formats.append("reference")
     files = p.get_load_package_info(p.list_completed_load_packages()[0]).jobs["completed_jobs"]
@@ -731,7 +841,10 @@ def test_pipeline_load_parquet(destination_config: DestinationTestConfiguration)
 
     github_1_counts = load_table_counts(p, *[t["name"] for t in p.default_schema.data_tables()])
     expected_rows = 100
-    if not destination_config.supports_merge:
+    # if table_format is set we use upsert which does not deduplicate input data
+    if not destination_config.supports_merge or (
+        destination_config.table_format and destination_config.destination_type != "athena"
+    ):
         expected_rows *= 2
     assert github_1_counts["issues"] == expected_rows
 
@@ -972,9 +1085,8 @@ def test_no_deduplicate_only_merge_key(destination_config: DestinationTestConfig
     destinations_configs(
         default_sql_configs=True,
         local_filesystem_configs=True,
-        table_format_filesystem_configs=True,
+        table_format_local_configs=True,
         supports_merge=True,
-        bucket_subset=(FILE_BUCKET),
     ),
     ids=lambda x: x.name,
 )
@@ -983,11 +1095,12 @@ def test_nested_column_missing(
     destination_config: DestinationTestConfiguration,
     merge_strategy: TLoaderMergeStrategy,
 ) -> None:
-    if destination_config.table_format == "delta":
+    if destination_config.table_format:
         pytest.skip(
             "Record updates that involve removing elements from a nested"
-            " column is not supported for `delta` table format."
+            " column is not supported for open table destinations."
         )
+    skip_if_unsupported_merge_strategy(destination_config, merge_strategy)
 
     table_name = "test_nested_column_missing"
 
@@ -1001,7 +1114,6 @@ def test_nested_column_missing(
         yield data
 
     p = destination_config.setup_pipeline("abstract", dev_mode=True)
-    skip_if_not_supported(merge_strategy, p.destination)
 
     data = [
         {"id": 1, "simple": "foo", "nested": [1, 2, 3]},
@@ -1036,6 +1148,7 @@ def test_hard_delete_hint(
 ) -> None:
     if merge_strategy == "upsert" and key_type != "primary_key":
         pytest.skip("`upsert` merge strategy requires `primary_key`")
+    skip_if_unsupported_merge_strategy(destination_config, merge_strategy)
     # no_key setting will have the effect that hard deletes have no effect, since hard delete records
     # can not be matched
     table_name = "test_hard_delete_hint"
@@ -1057,7 +1170,6 @@ def test_hard_delete_hint(
         pass
 
     p = destination_config.setup_pipeline(f"abstract_{key_type}", dev_mode=True)
-    skip_if_not_supported(merge_strategy, p.destination)
 
     # insert two records
     data = [
@@ -1198,6 +1310,8 @@ def test_hard_delete_hint_config(
     destination_config: DestinationTestConfiguration,
     merge_strategy: TLoaderMergeStrategy,
 ) -> None:
+    skip_if_unsupported_merge_strategy(destination_config, merge_strategy)
+
     table_name = "test_hard_delete_hint_non_bool"
 
     @dlt.resource(
@@ -1212,7 +1326,6 @@ def test_hard_delete_hint_config(
         yield data
 
     p = destination_config.setup_pipeline("abstract", dev_mode=True)
-    skip_if_not_supported(merge_strategy, p.destination)
 
     # insert two records
     data = [
@@ -1452,20 +1565,13 @@ def test_merge_strategy_config() -> None:
     "destination_config",
     destinations_configs(
         default_sql_configs=True,
-        table_format_filesystem_configs=True,
+        table_format_local_configs=True,
         supports_merge=True,
         subset=["postgres", "filesystem"],  # test one SQL and one non-SQL destination
     ),
     ids=lambda x: x.name,
 )
 def test_upsert_merge_strategy_config(destination_config: DestinationTestConfiguration) -> None:
-    if destination_config.destination_type == "filesystem":
-        # TODO: implement validation and remove this test exception
-        pytest.skip(
-            "`upsert` merge strategy configuration validation has not yet been"
-            " implemented for `fileystem` destination."
-        )
-
     @dlt.resource(write_disposition={"disposition": "merge", "strategy": "upsert"})
     def r():
         yield {"foo": "bar"}
@@ -1532,9 +1638,8 @@ def test_merge_key_null_values(destination_config: DestinationTestConfiguration)
     destinations_configs(
         default_sql_configs=True,
         local_filesystem_configs=True,
-        table_format_filesystem_configs=True,
+        table_format_local_configs=True,
         supports_merge=True,
-        bucket_subset=(FILE_BUCKET),
     ),
     ids=lambda x: x.name,
 )
@@ -1543,9 +1648,9 @@ def test_merge_arrow(
     destination_config: DestinationTestConfiguration,
     merge_strategy: TLoaderMergeStrategy,
 ) -> None:
-    pipeline = destination_config.setup_pipeline("merge_arrow", dev_mode=True)
+    skip_if_unsupported_merge_strategy(destination_config, merge_strategy)
 
-    skip_if_not_supported(merge_strategy, pipeline.destination)
+    pipeline = destination_config.setup_pipeline("merge_arrow", dev_mode=True)
 
     @dlt.resource(
         write_disposition={"disposition": "merge", "strategy": merge_strategy},

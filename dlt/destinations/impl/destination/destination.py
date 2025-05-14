@@ -1,18 +1,14 @@
 from types import TracebackType
-from typing import ClassVar, Optional, Type, Iterable, cast, List
+from typing import Optional, Type, Iterable, cast, List
 
 from dlt.destinations.job_impl import FinalizedLoadJob
-from dlt.common.destination.reference import LoadJob, PreparedTableSchema
+from dlt.common.destination.client import LoadJob, PreparedTableSchema, JobClientBase
 from dlt.common.typing import AnyFun
 from dlt.common.storages.load_package import destination_state
 from dlt.common.configuration import create_resolved_partial
 
 from dlt.common.schema import Schema, TSchemaTables
 from dlt.common.destination import DestinationCapabilitiesContext
-from dlt.common.destination.reference import (
-    JobClientBase,
-    LoadJob,
-)
 
 from dlt.destinations.impl.destination.configuration import CustomDestinationClientConfiguration
 from dlt.destinations.job_impl import (
@@ -64,7 +60,7 @@ class DestinationClient(JobClientBase):
 
         skipped_columns: List[str] = []
         if self.config.skip_dlt_columns_and_tables:
-            for column in list(self.schema.tables[table["name"]]["columns"].keys()):
+            for column in list(self.schema.get_table(table["name"])["columns"].keys()):
                 if column.startswith(self.schema._dlt_tables_prefix):
                     skipped_columns.append(column)
 

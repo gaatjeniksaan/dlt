@@ -1,26 +1,47 @@
 from typing import Any, Iterable, List, Sequence
 
 from dlt.common.exceptions import DltException, TerminalException, TransientException
+from dlt.common.reflection.exceptions import ReferenceImportError
+from dlt.common.reflection.ref import ImportTrace
 
 
 class DestinationException(DltException):
     pass
 
 
-class UnknownDestinationModule(DestinationException):
-    def __init__(self, destination_module: str) -> None:
-        self.destination_module = destination_module
-        if "." in destination_module:
-            msg = f"Destination module {destination_module} could not be found and imported"
+class UnknownDestinationModule(ReferenceImportError, DestinationException, KeyError):
+    def __init__(
+        self, ref: str, qualified_refs: Sequence[str], traces: Sequence[ImportTrace]
+    ) -> None:
+        self.ref = ref
+        self.qualified_refs = qualified_refs
+        super().__init__(traces=traces)
+
+    def __str__(self) -> str:
+        if "." in self.ref:
+            msg = f"Destination module {self.ref} is not registered."
         else:
-            msg = f"Destination {destination_module} is not one of the standard dlt destinations"
-        super().__init__(msg)
+            msg = f"Destination {self.ref} is not one of the standard dlt destinations."
+
+        if len(self.qualified_refs) == 1 and self.qualified_refs[0] == self.ref:
+            pass
+        else:
+            msg += (
+                " Following fully qualified refs were tried in the registry:\n\t%s\n"
+                % "\n\t".join(self.qualified_refs)
+            )
+        if self.traces:
+            msg += super().__str__()
+        return msg
 
 
 class InvalidDestinationReference(DestinationException):
-    def __init__(self, destination_module: Any) -> None:
-        self.destination_module = destination_module
-        msg = f"Destination {destination_module} is not a valid destination module."
+    def __init__(self, refs: Any) -> None:
+        self.refs = refs
+        msg = (
+            f"None of supplied destination refs: {refs} can be found in registry or imported as"
+            " Python type."
+        )
         super().__init__(msg)
 
 
@@ -171,4 +192,58 @@ class DestinationInvalidFileFormat(DestinationTerminalException):
         super().__init__(
             f"Destination {destination_type} cannot process file {file_name} with format"
             f" {file_format}: {message}"
+        )
+
+
+class OpenTableFormatNotSupported(DestinationTerminalException):
+    def __init__(self, table_format: str, table_name: str, detected_table_format: str):
+        self.table_format = table_format
+        self.table_name = table_name
+        self.detected_table_format = detected_table_format
+        if detected_table_format:
+            msg = (
+                f"Table {table_name} is stored as {detected_table_format} while {table_format} was"
+                " requested"
+            )
+        else:
+            msg = f"Table {table_name} is not stored in any known open table format."
+        super().__init__(msg)
+
+
+class OpenTableCatalogNotSupported(DestinationTerminalException):
+    def __init__(self, table_format: str, destination_type: str):
+        self.table_format = table_format
+        self.destination_type = destination_type
+        super().__init__(
+            f"Catalog not supported for table format {table_format} in {destination_type} "
+            "destination"
+        )
+
+
+class SqlClientNotAvailable(DestinationTerminalException):
+    def __init__(self, pipeline_name: str, destination_name: str) -> None:
+        super().__init__(
+            f"SQL Client not available for destination {destination_name} in pipeline"
+            f" {pipeline_name}",
+        )
+
+
+class DatasetNotAvailable(DestinationTerminalException):
+    def __init__(self, destination_name: str) -> None:
+        super().__init__(f"Destination {destination_name} does not support datasets.")
+
+
+class OpenTableClientNotAvailable(DestinationTerminalException):
+    def __init__(self, dataset_name: str, destination_name: str) -> None:
+        super().__init__(
+            f"Open table client not available for destination {destination_name} in dataset"
+            f" {dataset_name}",
+        )
+
+
+class FSClientNotAvailable(DestinationTerminalException):
+    def __init__(self, pipeline_name: str, destination_name: str) -> None:
+        super().__init__(
+            f"Filesystem Client not available for destination {destination_name} in pipeline"
+            f" {pipeline_name}",
         )

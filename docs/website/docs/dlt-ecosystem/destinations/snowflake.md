@@ -85,7 +85,13 @@ destination.snowflake.credentials="snowflake://loader:<password>@kgiotue-wn98412
 
 ```
 
-In **key pair authentication**, you replace the password with a private key string that should be in Base64-encoded DER format ([dbt also recommends](https://docs.getdbt.com/docs/core/connect-data-platform/snowflake-setup#key-pair-authentication) base64-encoded private keys for Snowflake connections). The private key may also be encrypted. In that case, you must provide a passphrase alongside the private key.
+In **key pair authentication**, you use private - public key pair to authenticate. `dlt` supports the following key formats:
+
+1. Base64-encoded DER format ([dbt also recommends](https://docs.getdbt.com/docs/core/connect-data-platform/snowflake-setup#key-pair-authentication) base64-encoded private keys for Snowflake connections).
+2. Plain-text or base64 encoded PEM format.
+
+The private key may also be encrypted. In that case, you must provide a passphrase alongside the private key.
+
 ```toml
 [destination.snowflake.credentials]
 database = "dlt_data"
@@ -94,13 +100,22 @@ host = "kgiotue-wn98412"
 private_key = "LS0tLS1CRUdJTiBFTkNSWVBURUQgUFJJ....Qo="
 private_key_passphrase="passphrase"
 ```
-> You can easily get the base64-encoded value of your private key by running `base64 -i <path-to-private-key-file>.pem` in your terminal
 
-If you pass a passphrase in the connection string, please URL encode it.
+> You can easily get the base64-encoded value of your private key by running `base64 -i <path-to-private-key-file>.der` in your terminal
+
+If you pass a passphrase or private_key in the connection string, **please URL encode it** or your keys will be mangled after decoding the
+query string:
+
 ```toml
 # Keep it at the top of your TOML file, before any section starts
-destination.snowflake.credentials="snowflake://loader:<password>@kgiotue-wn98412/dlt_data?private_key=<base64 encoded pem>&private_key_passphrase=<url encoded passphrase>"
+destination.snowflake.credentials="snowflake://loader:<password>@kgiotue-wn98412/dlt_data?private_key=<url encoded base64 pem|der>&amp;private_key_passphrase=<url encoded passphrase>"
 ```
+
+If you prefer to just pass a path to a private key file (in one of the formats above, binary formats are not supported), you can use
+`private_key_path` instead of `private_key` in `toml`, query string (**please URL encode it**) or environment variables. For example:
+
+`DESTINATION__SNOWFLAKE__PRIVATE_KEY_PATH=path_to_pem.pem`
+
 
 In **OAuth authentication**, you can use an OAuth provider like Snowflake, Okta, or an external browser to authenticate. In the case of Snowflake OAuth, you pass your `authenticator` and refresh `token` as below:
 ```toml
@@ -147,6 +162,10 @@ The data is loaded using an internal Snowflake stage. We use the `PUT` command a
 keep_staged_files = false
 ```
 
+:::note
+`dlt` overrides autocommit settings on Account and User level: `TRUE` is set explicitly when outside of transaction.
+:::
+
 ### Data types
 `snowflake` supports various timestamp types, which can be configured using the column flags `timezone` and `precision` in the `dlt.resource` decorator or the `pipeline.run` method.
 
@@ -183,6 +202,17 @@ When staging is enabled:
 When loading from Parquet, Snowflake will store `json` types (JSON) in `VARIANT` as a string. Use the JSONL format instead or use `PARSE_JSON` to update the `VARIANT` field after loading.
 :::
 
+When using the Parquet format, you can enable the **vectorized scanner** to improve performance. By default, this feature uses the `ON_ERROR=ABORT_STATEMENT` setting in `dlt`, which stops execution if an error occurs.
+To enable the vectorized scanner, add the following to your configuration:
+
+```toml
+[destination.snowflake]
+use_vectorized_scanner=true
+```
+:::note
+The  **vectorized scanner** explicitly displays `NULL` values in the output and has specific characteristics. Please refer to the official Snowflake documentation.
+:::
+
 ### Custom CSV formats
 By default, we support the CSV format [produced by our writers](../file-formats/csv.md#default-settings), which is comma-delimited, with a header, and optionally quoted.
 
@@ -217,9 +247,9 @@ Names of tables and columns in [schemas](../../general-usage/schema.md) are kept
 
 ## Staging support
 
-Snowflake supports S3 and GCS as file staging destinations. `dlt` will upload files in the parquet format to the bucket provider and will ask Snowflake to copy their data directly into the db.
+Snowflake supports S3 and GCS as file staging destinations. `dlt` will upload files in the Parquet format to the bucket provider and will ask Snowflake to copy their data directly into the db.
 
-Alternatively to parquet files, you can also specify jsonl as the staging file format. For this, set the `loader_file_format` argument of the `run` command of the pipeline to `jsonl`.
+Alternatively to Parquet files, you can also specify jsonl as the staging file format. For this, set the `loader_file_format` argument of the `run` command of the pipeline to `jsonl`.
 
 ### Snowflake and Amazon S3
 
@@ -324,6 +354,8 @@ stage_name="DLT_STAGE"
 keep_staged_files=true
 # Add UNIQUE and PRIMARY KEY hints to tables
 create_indexes=true
+# Enable vectorized scanner when using the Parquet format
+use_vectorized_scanner=true
 ```
 
 ### Setting up CSV format

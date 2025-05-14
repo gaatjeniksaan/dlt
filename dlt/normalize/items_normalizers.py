@@ -14,7 +14,7 @@ from dlt.common.schema.typing import (
     TTableSchemaColumns,
     TSchemaContractDict,
 )
-from dlt.common.schema.utils import dlt_id_column, has_table_seen_data
+from dlt.common.schema.utils import dlt_id_column, has_table_seen_data, normalize_table_identifiers
 from dlt.common.storages import NormalizeStorage
 from dlt.common.storages.data_item_storage import DataItemStorage
 from dlt.common.storages.load_package import ParsedLoadJobFileName
@@ -133,7 +133,9 @@ class JsonLItemsNormalizer(ItemsNormalizer):
                         schema_contract = self._table_contracts.setdefault(
                             table_name,
                             schema.resolve_contract_settings_for_table(
-                                parent_table or table_name
+                                table_name
+                                if table_name in schema.tables
+                                else parent_table or table_name
                             ),  # parent_table, if present, exists in the schema
                         )
                         partial_table, filters = schema.apply_schema_contract(
@@ -244,15 +246,16 @@ class ArrowItemsNormalizer(ItemsNormalizer):
         data_normalizer = schema.data_item_normalizer
 
         if add_dlt_id and isinstance(data_normalizer, RelationalNormalizer):
-            table_update = schema.update_table(
+            partial_table = normalize_table_identifiers(
                 {
                     "name": root_table_name,
                     "columns": {C_DLT_ID: dlt_id_column()},
                 },
-                normalize_identifiers=True,
+                schema.naming,
             )
+            schema.update_table(partial_table, normalize_identifiers=False)
             table_updates = schema_update.setdefault(root_table_name, [])
-            table_updates.append(table_update)
+            table_updates.append(partial_table)
             new_columns.append(
                 (
                     -1,
@@ -315,7 +318,8 @@ class ArrowItemsNormalizer(ItemsNormalizer):
         """
         schema = self.schema
         table = schema.tables[root_table_name]
-        max_precision = self.config.destination_capabilities.timestamp_precision
+        caps = self.config.destination_capabilities
+        max_precision = caps.timestamp_precision
 
         new_cols: TTableSchemaColumns = {}
         for key, column in table["columns"].items():
@@ -323,7 +327,16 @@ class ArrowItemsNormalizer(ItemsNormalizer):
                 prec = column.get("precision")
                 if prec is not None:
                     # apply the arrow schema precision to dlt column schema
-                    data_type = pyarrow.get_column_type_from_py_arrow(arrow_schema.field(key).type)
+                    try:
+                        data_type = pyarrow.get_column_type_from_py_arrow(
+                            arrow_schema.field(key).type,
+                            caps,
+                        )
+                    except pyarrow.UnsupportedArrowTypeException as e:
+                        e.field_name = key
+                        e.table_name = root_table_name
+                        raise
+
                     if data_type["data_type"] in ("timestamp", "time"):
                         prec = data_type["precision"]
                     # limit with destination precision
@@ -332,9 +345,11 @@ class ArrowItemsNormalizer(ItemsNormalizer):
                     new_cols[key] = dict(column, precision=prec)  # type: ignore[assignment]
         if not new_cols:
             return []
-        return [
-            {root_table_name: [schema.update_table({"name": root_table_name, "columns": new_cols})]}
-        ]
+        partial_table = normalize_table_identifiers(
+            {"name": root_table_name, "columns": new_cols}, schema.naming
+        )
+        schema.update_table(partial_table, normalize_identifiers=False)
+        return [{root_table_name: [partial_table]}]
 
     def __call__(self, extracted_items_file: str, root_table_name: str) -> List[TSchemaUpdate]:
         # read schema and counts from file metadata

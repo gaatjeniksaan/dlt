@@ -1,12 +1,12 @@
 ---
-title: Naming Convention
+title: Naming convention
 description: Control how dlt creates table, column and other identifiers
 keywords: [identifiers, snake case, case sensitive, case insensitive, naming]
 ---
 
 # Naming convention
 dlt creates table and column identifiers from the data. The data source, i.e., a stream of JSON documents, may have identifiers (i.e., key names in a dictionary) with any Unicode characters, of any length, and naming style. On the other hand, destinations require that you follow strict rules when you name tables, columns, or collections.
-A good example is [Redshift](../dlt-ecosystem/destinations/redshift.md#naming-convention) that accepts case-insensitive alphanumeric identifiers with a maximum of 127 characters.
+A good example is [Redshift](../dlt-ecosystem/destinations/redshift.md) that accepts case-insensitive alphanumeric identifiers with a maximum of 127 characters.
 
 `dlt` groups tables from a single [source](source.md) in a [schema](schema.md). Each schema defines a **naming convention** that tells `dlt` how to translate identifiers to the
 namespace that the destination understands. Naming conventions are, in essence, functions that map strings from the source identifier format into the destination identifier format. For example, our **snake_case** (default) naming convention will translate the `DealFlow` source identifier into the `deal_flow` destination identifier.
@@ -43,7 +43,7 @@ naming="sql_ci_v1"
 ### Pick the right identifier form when defining resources
 `dlt` keeps source (not normalized) identifiers during data [extraction](../reference/explainers/how-dlt-works.md#extract) and translates them during [normalization](../reference/explainers/how-dlt-works.md#normalize). For you, it means:
 1. If you write a [transformer](resource.md#process-resources-with-dlttransformer) or a [mapping/filtering function](resource.md#filter-transform-and-pivot-data), you will see the original data, without any normalization. Use the source identifiers to access the dicts!
-2. If you define a `primary_key` or `cursor` that participates in [cursor field incremental loading](incremental-loading.md#incremental-loading-with-a-cursor-field), use the source identifiers (`dlt` uses them to inspect source data, `Incremental` class is just a filtering function).
+2. If you define a `primary_key` or `cursor` that participates in [cursor field incremental loading](incremental/cursor.md), use the source identifiers (`dlt` uses them to inspect source data, `Incremental` class is just a filtering function).
 3. When defining any other hints, i.e., `columns` or `merge_key`, you can pick source or destination identifiers. `dlt` normalizes all hints together with your data.
 4. The `Schema` object (i.e., obtained from the pipeline or from `dlt` source via `discover_schema`) **always contains destination (normalized) identifiers**.
 
@@ -52,7 +52,7 @@ Identifiers are translated from source to destination form in the **normalize** 
 
 * The default naming convention is **snake_case**.
 * Each destination may define a preferred naming convention in [destination capabilities](destination.md#pass-additional-parameters-and-change-destination-capabilities). Some destinations (i.e., Weaviate) need a specialized naming convention and will override the default.
-* You can [configure a naming convention explicitly](#set-and-adjust-naming-convention-explicitly). Such configuration overrides the destination settings.
+* You can [configure a naming convention explicitly](#configure-naming-convention). Such configuration overrides the destination settings.
 * This naming convention is used when new schemas are created. It happens when the pipeline is run for the first time.
 * Schemas preserve the naming convention when saved. Your running pipelines will maintain existing naming conventions if not requested otherwise.
 * `dlt` applies the final naming convention in the `normalize` step. Jobs (files) in the load package now have destination identifiers. The pipeline schema is duplicated, locked, and saved in the load package and will be used by the destination.
@@ -191,7 +191,7 @@ Custom naming conventions are classes that derive from `NamingConvention`, which
 1. Each naming convention resides in a separate Python module (file).
 2. The class is always named `NamingConvention`.
 
-In that case, you can use a fully qualified module name in [schema configuration](#configure-naming-convention) or pass the module [explicitly](#set-and-adjust-naming-convention-explicitly).
+In that case, you can use a fully qualified module name in [schema configuration](#configure-naming-convention) or pass the module [explicitly](#configure-naming-convention).
 
 We include [two examples](../examples/custom_naming) of naming conventions that you may find useful:
 

@@ -40,8 +40,8 @@ class dummy(Destination[DummyClientConfiguration, "DummyClient"]):
     def __init__(
         self,
         credentials: DummyClientCredentials = None,
-        destination_name: t.Optional[str] = None,
-        environment: t.Optional[str] = None,
+        destination_name: str = None,
+        environment: str = None,
         **kwargs: t.Any,
     ) -> None:
         super().__init__(
@@ -68,3 +68,6 @@ class dummy(Destination[DummyClientConfiguration, "DummyClient"]):
         caps.supported_loader_file_formats = additional_formats + [config.loader_file_format]
         caps.supported_staging_file_formats = additional_formats + [config.loader_file_format]
         return caps
+
+
+dummy.register()

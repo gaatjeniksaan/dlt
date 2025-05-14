@@ -18,7 +18,7 @@ from dlt.destinations.sql_client import (
 )
 from dlt.destinations.typing import DBApi, DBTransaction, DataFrame
 from dlt.destinations.impl.snowflake.configuration import SnowflakeCredentials
-from dlt.common.destination.reference import DBApiCursor
+from dlt.common.destination.dataset import DBApiCursor
 
 
 class SnowflakeCursorImpl(DBApiCursorImpl):
@@ -52,6 +52,8 @@ class SnowflakeSqlClient(SqlClientBase[snowflake_lib.SnowflakeConnection], DBTra
         # we get dlt expected UTC
         if "timezone" not in conn_params:
             conn_params["timezone"] = "UTC"
+        # set autocommit when opening connection to override account and user level setting
+        conn_params["autocommit"] = True
         self._conn = snowflake_lib.connect(
             schema=self.fully_qualified_dataset_name(), **conn_params
         )

@@ -223,6 +223,23 @@ def test_jsonl_reader(destination_config: DestinationTestConfiguration) -> None:
     destinations_configs(default_sql_configs=True, subset=["duckdb"]),
     ids=lambda x: x.name,
 )
+def test_append_column_with_hint(destination_config: DestinationTestConfiguration) -> None:
+    pipeline = destination_config.setup_pipeline("test_append_column_with_hint")
+
+    data = [{"a": 1, "b": 2}, {"a": 1}]
+    pipeline.run(data, table_name="data")
+    # nullability info is not ignored on ALTER TABLE
+    # duckdb prevents adding any constraints on ALTER TABLE
+    with pytest.raises(PipelineStepFailed) as pip_ex:
+        pipeline.run([{"c": "X"}], table_name="data", columns={"c": {"nullable": False}})
+    assert pip_ex.value.step == "load"
+
+
+@pytest.mark.parametrize(
+    "destination_config",
+    destinations_configs(default_sql_configs=True, subset=["duckdb"]),
+    ids=lambda x: x.name,
+)
 def test_provoke_parallel_parquet_same_table(
     destination_config: DestinationTestConfiguration,
 ) -> None:
@@ -285,6 +302,3 @@ def test_duckdb_credentials_separation(
 
     assert "p1" in p1_dataset.sql_client.credentials._conn_str()
     assert "p2" in p2_dataset.sql_client.credentials._conn_str()
-
-    assert p1_dataset.sql_client.credentials.bound_to_pipeline is p1
-    assert p2_dataset.sql_client.credentials.bound_to_pipeline is p2

@@ -19,9 +19,8 @@ from dlt.common.configuration.specs.exceptions import InvalidGoogleNativeCredent
 from dlt.common.schema.utils import new_table
 from dlt.common.storages import FileStorage
 from dlt.common.utils import digest128, uniq_id, custom_environ
-from dlt.common.destination.reference import RunnableLoadJob
+from dlt.common.destination.client import RunnableLoadJob
 from dlt.destinations.impl.bigquery.bigquery import BigQueryClient, BigQueryClientConfiguration
-from dlt.destinations.exceptions import LoadJobNotExistsException, LoadJobTerminalException
 
 from dlt.destinations.impl.bigquery.bigquery_adapter import (
     AUTODETECT_SCHEMA_HINT,
@@ -233,6 +232,7 @@ def test_bigquery_configuration() -> None:
     assert config.retry_deadline == 60.0
     assert config.file_upload_timeout == 1800.0
     assert config.fingerprint() == digest128("chat-analytics-rasa-ci")
+    assert config.ignore_unknown_values is False
 
     # credential location is deprecated
     # os.environ["CREDENTIALS__LOCATION"] = "EU"
@@ -394,7 +394,7 @@ def test_loading_errors(client: BigQueryClient, file_storage: FileStorage) -> No
     job = expect_load_file(
         client, file_storage, json.dumps(insert_json), user_table_name, status="failed"
     )
-    assert "Couldn't convert value to timestamp:" in job.exception()
+    assert "Could not parse 'AA' as a timestamp" in job.exception()
 
     # numeric overflow on bigint
     insert_json = copy(load_json)

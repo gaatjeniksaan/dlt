@@ -1,13 +1,15 @@
 name: test | clickhouse
 
 on:
-  pull_request:
+  pull_request_target:
     branches:
       - master
       - devel
+    types:
+      - opened
+      - synchronize
+      - labeled
   workflow_dispatch:
-  schedule:
-    - cron: '0 2 * * *'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -22,10 +24,17 @@ env:
   ALL_FILESYSTEM_DRIVERS: "[\"memory\", \"file\"]"
 
 jobs:
+  authorize:
+    # run when label is assigned OR when we are not a fork
+    if: ${{ github.event.label.name == 'ci from fork' || (github.event.pull_request.head.repo.full_name == github.repository && (github.event.action == 'opened' || github.event.action == 'synchronize'))}}
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
+
   get_docs_changes:
     name: docs changes
+    needs: authorize
     uses: ./.github/workflows/get_docs_changes.yml
-    if: ${{ !github.event.pull_request.head.repo.fork || contains(github.event.pull_request.labels.*.name, 'ci from fork')}}
 
   run_loader:
     name: test | clickhouse tests
@@ -40,6 +49,8 @@ jobs:
 
       - name: Check out
         uses: actions/checkout@master
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
 
       - name: Setup Python
         uses: actions/setup-python@v4
@@ -62,7 +73,7 @@ jobs:
           key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}-gcp
 
       - name: Install dependencies
-        run: poetry install --no-interaction -E clickhouse --with providers -E parquet --with sentry-sdk --with pipeline && poetry run pip install ibis-framework[duckdb,postgres,bigquery,snowflake,mssql,clickhouse]
+        run: poetry install --no-interaction -E clickhouse --with providers -E parquet --with sentry-sdk --with pipeline --with ibis
 
       - name: create secrets.toml
         run: pwd && echo "$DLT_SECRETS_TOML" > tests/.dlt/secrets.toml
@@ -75,22 +86,8 @@ jobs:
           echo "ClickHouse is up and running"
         name: Start ClickHouse OSS
 
-
-      - run: poetry run pytest tests/load --ignore tests/load/sources -m "essential"
-        name: Run essential tests Linux (ClickHouse OSS)
-        if: ${{ ! (contains(github.event.pull_request.labels.*.name, 'ci full') || github.event_name == 'schedule')}}
-        env:
-          DESTINATION__CLICKHOUSE__CREDENTIALS__HOST: localhost
-          DESTINATION__CLICKHOUSE__CREDENTIALS__DATABASE: dlt_data
-          DESTINATION__CLICKHOUSE__CREDENTIALS__USERNAME: loader
-          DESTINATION__CLICKHOUSE__CREDENTIALS__PASSWORD: loader
-          DESTINATION__CLICKHOUSE__CREDENTIALS__PORT: 9000
-          DESTINATION__CLICKHOUSE__CREDENTIALS__HTTP_PORT: 8123
-          DESTINATION__CLICKHOUSE__CREDENTIALS__SECURE: 0
-
       - run: poetry run pytest tests/load --ignore tests/load/sources
         name: Run all tests Linux (ClickHouse OSS)
-        if: ${{ contains(github.event.pull_request.labels.*.name, 'ci full') || github.event_name == 'schedule'}}
         env:
           DESTINATION__CLICKHOUSE__CREDENTIALS__HOST: localhost
           DESTINATION__CLICKHOUSE__CREDENTIALS__DATABASE: dlt_data

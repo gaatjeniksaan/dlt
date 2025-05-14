@@ -6,7 +6,7 @@ from typing import Iterator, List
 pytest.importorskip("airflow")
 from airflow import DAG
 from airflow.decorators import dag
-from airflow.operators.python import PythonOperator, get_current_context
+from airflow.operators.python import BaseOperator, PythonOperator, get_current_context
 from airflow.models import TaskInstance
 from airflow.utils.state import DagRunState
 from airflow.utils.types import DagRunType
@@ -165,7 +165,7 @@ def test_regular_run() -> None:
         pipeline_standalone, *[t["name"] for t in pipeline_standalone.default_schema.data_tables()]
     )
 
-    tasks_list: List[PythonOperator] = None
+    tasks_list: List[BaseOperator] = None
 
     @dag(schedule=None, start_date=DEFAULT_DATE, catchup=False, default_args=default_args)
     def dag_regular():
@@ -178,6 +178,9 @@ def test_regular_run() -> None:
             pipeline_name="pipeline_dag_regular",
             dataset_name="mock_data_" + uniq_id(),
             destination=dlt.destinations.duckdb(credentials=":pipeline:"),
+        )
+        assert pipeline_dag_regular.get_local_state_val("initial_cwd").startswith(
+            os.path.abspath(TEST_STORAGE_ROOT)
         )
         tasks_list = tasks.add_run(
             pipeline_dag_regular,
@@ -210,8 +213,6 @@ def test_regular_run() -> None:
     # same data should be loaded
     assert pipeline_dag_regular_counts == pipeline_standalone_counts
 
-    quackdb_path = os.path.join(TEST_STORAGE_ROOT, "pipeline_dag_decomposed.duckdb")
-
     @dag(schedule=None, start_date=DEFAULT_DATE, catchup=False, default_args=default_args)
     def dag_decomposed():
         nonlocal tasks_list
@@ -223,7 +224,7 @@ def test_regular_run() -> None:
         pipeline_dag_decomposed = dlt.pipeline(
             pipeline_name="pipeline_dag_decomposed",
             dataset_name="mock_data_" + uniq_id(),
-            destination=dlt.destinations.duckdb(credentials=quackdb_path),
+            destination="duckdb",
         )
         tasks_list = tasks.add_run(
             pipeline_dag_decomposed,
@@ -243,7 +244,6 @@ def test_regular_run() -> None:
     dag_def.test()
     pipeline_dag_decomposed = dlt.attach(
         pipeline_name="pipeline_dag_decomposed",
-        destination=dlt.destinations.duckdb(credentials=quackdb_path),
     )
     pipeline_dag_decomposed_counts = load_table_counts(
         pipeline_dag_decomposed,
@@ -253,7 +253,7 @@ def test_regular_run() -> None:
 
 
 def test_run() -> None:
-    task: PythonOperator = None
+    task: BaseOperator = None
 
     pipeline_standalone = dlt.pipeline(
         pipeline_name="pipeline_standalone",
@@ -264,8 +264,6 @@ def test_run() -> None:
     pipeline_standalone_counts = load_table_counts(
         pipeline_standalone, *[t["name"] for t in pipeline_standalone.default_schema.data_tables()]
     )
-
-    quackdb_path = os.path.join(TEST_STORAGE_ROOT, "pipeline_dag_regular.duckdb")
 
     @dag(schedule=None, start_date=DEFAULT_DATE, catchup=False, default_args=default_args)
     def dag_regular():
@@ -278,7 +276,7 @@ def test_run() -> None:
         pipeline_dag_regular = dlt.pipeline(
             pipeline_name="pipeline_dag_regular",
             dataset_name="mock_data_" + uniq_id(),
-            destination=dlt.destinations.duckdb(credentials=quackdb_path),
+            destination=dlt.destinations.duckdb(destination_name="dag_regular_b"),
         )
         task = tasks.run(pipeline_dag_regular, mock_data_source())
 
@@ -289,12 +287,9 @@ def test_run() -> None:
 
     pipeline_dag_regular = dlt.attach(
         pipeline_name="pipeline_dag_regular",
-        destination=dlt.destinations.duckdb(credentials=quackdb_path),
     )
     assert pipeline_dag_regular.first_run is False
-    assert (
-        pipeline_dag_regular.destination.config_params["bound_to_pipeline"] is pipeline_dag_regular
-    )
+
     pipeline_dag_regular_counts = load_table_counts(
         pipeline_dag_regular,
         *[t["name"] for t in pipeline_dag_regular.default_schema.data_tables()],
@@ -315,9 +310,9 @@ def test_parallel_run():
         pipeline_standalone, *[t["name"] for t in pipeline_standalone.default_schema.data_tables()]
     )
 
-    tasks_list: List[PythonOperator] = None
+    tasks_list: List[BaseOperator] = None
 
-    quackdb_path = os.path.join(TEST_STORAGE_ROOT, "pipeline_dag_parallel.duckdb")
+    quackdb_path = os.path.abspath(os.path.join(TEST_STORAGE_ROOT, "pipeline_dag_parallel.duckdb"))
 
     @dag(schedule=None, start_date=DEFAULT_DATE, catchup=False, default_args=default_args)
     def dag_parallel():
@@ -370,9 +365,7 @@ def test_parallel_incremental():
     )
     pipeline_standalone.run(mock_data_incremental_source())
 
-    tasks_list: List[PythonOperator] = None
-
-    quackdb_path = os.path.join(TEST_STORAGE_ROOT, "pipeline_dag_parallel.duckdb")
+    tasks_list: List[BaseOperator] = None
 
     @dag(schedule=None, start_date=DEFAULT_DATE, catchup=False, default_args=default_args)
     def dag_parallel():
@@ -385,7 +378,7 @@ def test_parallel_incremental():
         pipeline_dag_parallel = dlt.pipeline(
             pipeline_name="pipeline_dag_parallel",
             dataset_name="mock_data_" + uniq_id(),
-            destination=dlt.destinations.duckdb(credentials=quackdb_path),
+            destination="duckdb",
         )
         tasks.add_run(
             pipeline_dag_parallel,
@@ -423,9 +416,7 @@ def test_parallel_isolated_run():
         pipeline_standalone, *[t["name"] for t in pipeline_standalone.default_schema.data_tables()]
     )
 
-    tasks_list: List[PythonOperator] = None
-
-    quackdb_path = os.path.join(TEST_STORAGE_ROOT, "pipeline_dag_parallel.duckdb")
+    tasks_list: List[BaseOperator] = None
 
     @dag(schedule=None, start_date=DEFAULT_DATE, catchup=False, default_args=default_args)
     def dag_parallel():
@@ -438,7 +429,7 @@ def test_parallel_isolated_run():
         pipeline_dag_parallel = dlt.pipeline(
             pipeline_name="pipeline_dag_parallel",
             dataset_name="mock_data_" + uniq_id(),
-            destination=dlt.destinations.duckdb(credentials=quackdb_path),
+            destination=dlt.destinations.duckdb(),
         )
         tasks_list = tasks.add_run(
             pipeline_dag_parallel,
@@ -460,7 +451,6 @@ def test_parallel_isolated_run():
             pipeline_name=snake_case.normalize_identifier(
                 dag_def.tasks[i].task_id.replace("pipeline_dag_parallel.", "")[:-2]
             ),
-            destination=dlt.destinations.duckdb(credentials=quackdb_path),
         )
         pipeline_dag_decomposed_counts = load_table_counts(
             pipeline_dag_parallel,
@@ -487,9 +477,7 @@ def test_parallel_run_single_resource():
         pipeline_standalone, *[t["name"] for t in pipeline_standalone.default_schema.data_tables()]
     )
 
-    tasks_list: List[PythonOperator] = None
-
-    quackdb_path = os.path.join(TEST_STORAGE_ROOT, "pipeline_dag_parallel.duckdb")
+    tasks_list: List[BaseOperator] = None
 
     @dag(schedule=None, start_date=DEFAULT_DATE, catchup=False, default_args=default_args)
     def dag_parallel():
@@ -502,7 +490,7 @@ def test_parallel_run_single_resource():
         pipeline_dag_parallel = dlt.pipeline(
             pipeline_name="pipeline_dag_parallel",
             dataset_name="mock_data_" + uniq_id(),
-            destination=dlt.destinations.duckdb(credentials=quackdb_path),
+            destination="duckdb",
         )
         tasks_list = tasks.add_run(
             pipeline_dag_parallel,
@@ -518,7 +506,6 @@ def test_parallel_run_single_resource():
     dag_def.test()
     pipeline_dag_parallel = dlt.attach(
         pipeline_name="pipeline_dag_parallel",
-        destination=dlt.destinations.duckdb(credentials=quackdb_path),
     )
     pipeline_dag_decomposed_counts = load_table_counts(
         pipeline_dag_parallel,
@@ -881,7 +868,7 @@ def test_task_already_added():
     Test that the error 'Task id {id} has already been added to the DAG'
     is not happening while adding two same sources.
     """
-    tasks_list: List[PythonOperator] = None
+    tasks_list: List[BaseOperator] = None
 
     @dag(schedule=None, start_date=pendulum.today(), catchup=False)
     def dag_parallel():
@@ -956,7 +943,7 @@ def callable_source():
 
 
 def test_run_callable() -> None:
-    quackdb_path = os.path.join(TEST_STORAGE_ROOT, "callable_dag.duckdb")
+    # quackdb_path = os.path.join(TEST_STORAGE_ROOT, "callable_dag.duckdb")
 
     @dag(schedule=None, start_date=DEFAULT_DATE, catchup=False, default_args=default_args)
     def dag_regular():
@@ -967,16 +954,14 @@ def test_run_callable() -> None:
         call_dag = dlt.pipeline(
             pipeline_name="callable_dag",
             dataset_name="mock_data_" + uniq_id(),
-            destination=dlt.destinations.duckdb(credentials=quackdb_path),
+            destination=dlt.destinations.duckdb(destination_name="callable_dag_db"),
         )
         tasks.run(call_dag, callable_source)
 
     dag_def: DAG = dag_regular()
     dag_def.test()
 
-    pipeline_dag = dlt.attach(
-        pipeline_name="callable_dag", destination=dlt.destinations.duckdb(credentials=quackdb_path)
-    )
+    pipeline_dag = dlt.attach(pipeline_name="callable_dag")
 
     with pipeline_dag.sql_client() as client:
         with client.execute_query("SELECT * FROM test_res") as result:

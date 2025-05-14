@@ -2,10 +2,14 @@
 name: docs | snippets & examples
 
 on:
-  pull_request:
+  pull_request_target:
     branches:
       - master
       - devel
+    types:
+      - opened
+      - synchronize
+      - labeled
   workflow_dispatch:
 
 concurrency:
@@ -27,12 +31,17 @@ env:
   IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
 
 jobs:
+  authorize:
+    # run when label is assigned OR when we are not a fork
+    if: ${{ github.event.label.name == 'ci from fork' || (github.event.pull_request.head.repo.full_name == github.repository && (github.event.action == 'opened' || github.event.action == 'synchronize'))}}
+    runs-on: ubuntu-latest
+    steps:
+      - run: true
 
   run_lint:
     name: docs | snippets & examples lint and test
+    needs: authorize
     runs-on: ubuntu-latest
-    # Do not run on forks, unless allowed, secrets are used here
-    if: ${{ !github.event.pull_request.head.repo.fork || contains(github.event.pull_request.labels.*.name, 'ci from fork')}}
 
     # Service containers to run with `container-job`
     services:
@@ -58,6 +67,8 @@ jobs:
 
       - name: Check out
         uses: actions/checkout@master
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
 
       - name: Start weaviate
         run:  docker compose -f "tests/load/weaviate/docker-compose.yml" up -d
@@ -80,19 +91,22 @@ jobs:
           installer-parallel: true
           version: 1.8.5
 
-      - name: Load cached venv
-        id: cached-poetry-dependencies
-        uses: actions/cache@v3
-        with:
-          path: .venv
-          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+      # - name: Load cached venv
+      #   id: cached-poetry-dependencies
+      #   uses: actions/cache@v3
+      #   with:
+      #     path: .venv
+      #     key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dlt-plus nightly devel build without cache
+        run: poetry run pip install --upgrade --force-reinstall --no-cache-dir --pre dlt-plus
 
       - name: run docs preprocessor
         run: make preprocess-docs
 
       - name: Install dependencies
         # if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-        run: poetry install --no-interaction -E duckdb -E weaviate -E parquet -E qdrant -E bigquery -E postgres -E lancedb --with docs,sentry-sdk --without airflow -E s3
+        run: poetry install --no-interaction -E duckdb -E weaviate -E parquet -E qdrant -E bigquery -E postgres -E lancedb --with docs,sentry-sdk,ibis --without airflow -E s3
 
       - name: create secrets.toml for examples
         run: pwd && echo "$DLT_SECRETS_TOML" > docs/examples/.dlt/secrets.toml
@@ -100,11 +114,14 @@ jobs:
       - name: create secrets.toml for snippets
         run: pwd && echo "$DLT_SECRETS_TOML" > docs/website/docs/.dlt/secrets.toml
 
-      - name: Run linter and tests on examples
-        run: make lint-and-test-examples
+      # NOTE: there seems to be a conflict between pydoclint and pydoc-markdown dependencies
+      - name: Force uninstall pydoclint
+        run: poetry run pip uninstall pydoclint -y
 
       - name: Run linter and tests on snippets
         run: make lint-and-test-snippets
 
+      - name: Run linter and tests on examples
+        run: make lint-and-test-examples
 
 

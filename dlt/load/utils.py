@@ -12,7 +12,7 @@ from dlt.common.schema.utils import (
 from dlt.common.storages.load_storage import ParsedLoadJobFileName
 from dlt.common.schema import Schema, TSchemaTables
 from dlt.common.schema.typing import TTableSchema
-from dlt.common.destination.reference import JobClientBase, WithStagingDataset, LoadJob
+from dlt.common.destination.client import JobClientBase, WithStagingDataset, LoadJob
 from dlt.load.configuration import LoaderConfiguration
 from dlt.common.destination import DestinationCapabilitiesContext
 
@@ -131,7 +131,8 @@ def init_client(
             )
         )
 
-        if staging_tables:
+        # if there are tables to drop, we should also drop them in the staging dataset
+        if staging_tables or drop_table_names:
             with job_client.with_staging_dataset():
                 _init_dataset_and_update_schema(
                     job_client,

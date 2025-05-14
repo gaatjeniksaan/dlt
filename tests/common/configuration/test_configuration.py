@@ -397,13 +397,13 @@ def test_final_ignores_value_change(environment: Any) -> None:
     class FinalConfiguration2(BaseConfiguration):
         pipeline_name: Final[str] = None
 
-    c2 = resolve.resolve_configuration(FinalConfiguration2())
-    assert dict(c2) == {"pipeline_name": None}
+    with pytest.raises(ConfigFieldMissingException):
+        resolve.resolve_configuration(FinalConfiguration2())
 
     c2 = resolve.resolve_configuration(
         FinalConfiguration2(), explicit_value={"pipeline_name": "exp"}
     )
-    assert c.pipeline_name == "exp"
+    assert c2.pipeline_name == "exp"
     with pytest.raises(ConfigFieldMissingException):
         resolve.resolve_configuration(FinalConfiguration2(), explicit_value={"pipeline_name": None})
 
@@ -435,13 +435,13 @@ def test_not_resolved_ignores_value_change(environment: Any) -> None:
     class NotResolvedConfiguration2(BaseConfiguration):
         pipeline_name: Annotated[str, NotResolved()] = None
 
-    c2 = resolve.resolve_configuration(NotResolvedConfiguration2())
-    assert dict(c2) == {"pipeline_name": None}
+    with pytest.raises(ConfigFieldMissingException):
+        resolve.resolve_configuration(NotResolvedConfiguration2())
 
     c2 = resolve.resolve_configuration(
         NotResolvedConfiguration2(), explicit_value={"pipeline_name": "exp"}
     )
-    assert c.pipeline_name == "exp"
+    assert c2.pipeline_name == "exp"
     with pytest.raises(ConfigFieldMissingException):
         resolve.resolve_configuration(
             NotResolvedConfiguration2(), explicit_value={"pipeline_name": None}
@@ -1472,6 +1472,22 @@ def test_configuration_with_configuration_as_default() -> None:
     c_resolved = resolve.resolve_configuration(c_instance)
     assert c_resolved.is_resolved()
     assert c_resolved.conn_str.is_resolved()
+
+
+def test_configuration_with_section_propagation_to_embedded(environment: Dict[str, str]) -> None:
+    @configspec
+    class EmbeddedConfigurationWithDefaults(BaseConfiguration):
+        default: str = "STR"
+        instrumented: InstrumentedConfiguration = None
+
+        __section__ = "top_level"
+
+    # NOTE: top level will be stripped in less specific searches
+    environment["TOP_LEVEL__INSTRUMENTED__HEAD"] = "h"
+    environment["TOP_LEVEL__INSTRUMENTED__TUBE"] = '["t"]'
+    environment["TOP_LEVEL__INSTRUMENTED__HEELS"] = "he"
+    c_resolved = resolve.resolve_configuration(EmbeddedConfigurationWithDefaults())
+    assert c_resolved.is_resolved()
 
 
 def test_configuration_with_generic(environment: Dict[str, str]) -> None:

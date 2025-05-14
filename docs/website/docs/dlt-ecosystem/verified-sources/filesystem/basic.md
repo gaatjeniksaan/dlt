@@ -4,6 +4,7 @@ description: Learn how to set up and configure
 keywords: [readers source and filesystem, files, filesystem, readers source, cloud storage, object storage, local file system]
 ---
 import Header from '../_source-info-header.md';
+
 <Header/>
 
 Filesystem source allows loading files from remote locations (AWS S3, Google Cloud Storage, Google Drive, Azure Blob Storage, SFTP server) or the local filesystem seamlessly. Filesystem source natively supports [CSV](../../file-formats/csv.md), [Parquet](../../file-formats/parquet.md), and [JSONL](../../file-formats/jsonl.md) files and allows customization for loading any type of structured files.
@@ -145,7 +146,7 @@ You don't need any credentials for the local filesystem.
 
 ### Add credentials to dlt pipeline
 
-To provide credentials to the filesystem source, you can use [any method available](../../../general-usage/credentials/setup#available-config-providers) in dlt.
+To provide credentials to the filesystem source, you can use [any method available](../../../general-usage/credentials/setup) in dlt.
 One of the easiest ways is to use configuration files. The `.dlt` folder in your working directory contains two files: `config.toml` and `secrets.toml`. Sensitive information, like passwords and access tokens, should only be put into `secrets.toml`, while any other configuration, like the path to a bucket, can be specified in `config.toml`.
 
 <Tabs

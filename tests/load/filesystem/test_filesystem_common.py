@@ -50,7 +50,6 @@ def test_filesystem_configuration() -> None:
         "bucket_url": "az://root",
         "credentials": None,
         "client_kwargs": None,
-        "max_state_files": 100,
         "kwargs": None,
         "deltalake_storage_options": None,
     }
@@ -218,7 +217,6 @@ def test_filesystem_configuration_with_additional_arguments() -> None:
         "read_only": False,
         "bucket_url": "az://root",
         "credentials": None,
-        "max_state_files": 100,
         "kwargs": {"use_ssl": True},
         "client_kwargs": {"verify": "public.crt"},
         "deltalake_storage_options": {"AWS_S3_LOCKING_PROVIDER": "dynamodb"},
@@ -265,23 +263,24 @@ def test_s3_wrong_client_certificate(default_buckets_env: str, self_signed_cert:
 
 
 def test_filesystem_destination_config_reports_unused_placeholders(mocker) -> None:
-    with custom_environ({"DATASET_NAME": "BOBO"}):
-        extra_placeholders: TExtraPlaceholders = {
-            "value": 1,
-            "otters": "lab",
-            "dlt": "labs",
-            "dlthub": "platform",
-            "x": "files",
-        }
-        logger_spy = mocker.spy(logger, "info")
-        resolve.resolve_configuration(
-            FilesystemDestinationClientConfiguration(
-                bucket_url="file:///tmp/dirbobo",
-                layout="{schema_name}/{table_name}/{otters}-x-{x}/{load_id}.{file_id}.{timestamp}.{ext}",
-                extra_placeholders=extra_placeholders,
-            )
-        )
-        logger_spy.assert_called_once_with("Found unused layout placeholders: value, dlt, dlthub")
+    extra_placeholders: TExtraPlaceholders = {
+        "value": 1,
+        "otters": "lab",
+        "dlt": "labs",
+        "dlthub": "platform",
+        "x": "files",
+    }
+    logger_spy = mocker.spy(logger, "info")
+    resolve.resolve_configuration(
+        FilesystemDestinationClientConfiguration(
+            bucket_url="file:///tmp/dirbobo",
+            layout=(
+                "{schema_name}/{table_name}/{otters}-x-{x}/{load_id}.{file_id}.{timestamp}.{ext}"
+            ),
+            extra_placeholders=extra_placeholders,
+        )._bind_dataset_name("dataset")
+    )
+    logger_spy.assert_called_once_with("Found unused layout placeholders: value, dlt, dlthub")
 
 
 def test_filesystem_destination_passed_parameters_override_config_values() -> None:

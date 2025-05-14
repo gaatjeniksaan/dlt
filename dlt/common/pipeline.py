@@ -32,6 +32,7 @@ from dlt.common.configuration.specs import ContainerInjectableContext
 from dlt.common.configuration.specs.config_section_context import ConfigSectionContext
 from dlt.common.configuration.specs import RuntimeConfiguration
 from dlt.common.destination import TDestinationReferenceArg, AnyDestination
+from dlt.common.destination.client import JobClientBase
 from dlt.common.destination.exceptions import DestinationHasFailedJobs
 from dlt.common.exceptions import (
     PipelineStateNotAvailable,
@@ -446,7 +447,7 @@ class TPipelineLocalState(TypedDict, total=False):
     _last_extracted_hash: str
     """Hash of state that was recently synced with destination"""
     initial_cwd: str
-    """Current working dir when pipeline was instantiated for a first time"""
+    """Run dir when pipeline was instantiated for a first time, defaults to cwd on OSS run context"""
 
 
 class TPipelineState(TVersionedState, total=False):
@@ -496,17 +497,39 @@ class SupportsPipeline(Protocol):
 
     @property
     def state(self) -> TPipelineState:
-        """Returns dictionary with pipeline state"""
+        """Returns dictionary with current pipeline state
+
+        Returns:
+            TPipelineState: The current pipeline state
+        """
 
     @property
     def schemas(self) -> Mapping[str, Schema]:
-        """Mapping of all pipeline schemas"""
+        """Returns all known schemas of the pipeline
 
-    def set_local_state_val(self, key: str, value: Any) -> None:
-        """Sets value in local state. Local state is not synchronized with destination."""
+        Returns:
+            Mapping[str, Schema]: A mapping of schema names to their corresponding Schema objects
+        """
 
     def get_local_state_val(self, key: str) -> Any:
-        """Gets value from local state. Local state is not synchronized with destination."""
+        """Gets value from local state. Local state is not synchronized with destination.
+
+        Args:
+            key (str): The key to get the value from
+
+        Returns:
+            Any: The value from the local state
+        """
+
+    def destination_client(self, schema_name: str = None) -> JobClientBase:
+        """Get the destination job client for the configured destination
+
+        Args:
+            schema_name (str, optional): The name of the schema to get the client for. Defaults to None.
+
+        Returns:
+            JobClientBase: The destination job client
+        """
 
     def run(
         self,
@@ -522,13 +545,28 @@ class SupportsPipeline(Protocol):
         schema: Schema = None,
         loader_file_format: TLoaderFileFormat = None,
         schema_contract: TSchemaContract = None,
-    ) -> LoadInfo: ...
+    ) -> LoadInfo:
+        """Loads the data into the destination
+
+        Args:
+            data (Any): The data to load. Can be a DltSource, DltResource or any iterable of data items.
+            destination (TDestinationReferenceArg, optional): The destination to load the data to.
+            dataset_name (str, optional): The name of the dataset to load the data to.
+            credentials (Any, optional): The credentials to use to load the data.
+            table_name (str, optional): The name of the table to load the data to.
+            write_disposition (TWriteDispositionConfig, optional): The write disposition to use to load the data.
+            columns (Sequence[TColumnSchema], optional): A list of column hints.
+            primary_key (TColumnNames, optional): A list of column names to be used as primary key.
+            schema (Schema, optional): A schema to use to load the data. Defaults to the schema configured in the pipeline.
+            loader_file_format (TLoaderFileFormat, optional): The file format to use to load the data. Defaults to preferred loader file format of the destination.
+            schema_contract (TSchemaContract, optional): The schema contract to use to load the data.
+
+        Returns:
+            LoadInfo: Information on the load operation
+        """
 
     def _set_context(self, is_active: bool) -> None:
         """Called when pipeline context activated or deactivate"""
-
-    def _make_schema_with_default_name(self) -> Schema:
-        """Make a schema from the pipeline name using the name normalizer. "_pipeline" suffix is removed if present"""
 
 
 class SupportsPipelineRun(Protocol):
@@ -751,8 +789,8 @@ def reset_resource_state(resource_name: str, source_state_: Optional[DictStrAny]
     """Resets the resource state with name `resource_name` by removing it from `source_state`
 
     Args:
-        resource_name: The resource key to reset
-        state: Optional source state dictionary to operate on. Use when working outside source context.
+        resource_name (str): The resource key to reset
+        source_state_ (Optional[DictStrAny]): Optional source state dictionary to operate on. Use when working outside source context.
     """
     state_ = source_state() if source_state_ is None else source_state_
     if "resources" in state_ and resource_name in state_["resources"]:
@@ -785,14 +823,14 @@ def get_dlt_pipelines_dir() -> str:
     """
     from dlt.common.runtime import run_context
 
-    return run_context.current().get_data_entity("pipelines")
+    return run_context.active().get_data_entity("pipelines")
 
 
 def get_dlt_repos_dir() -> str:
     """Gets default directory where command repositories will be stored"""
     from dlt.common.runtime import run_context
 
-    return run_context.current().get_data_entity("repos")
+    return run_context.active().get_data_entity("repos")
 
 
 _CURRENT_PIPE_NAME: Dict[int, str] = {}

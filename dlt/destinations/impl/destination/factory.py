@@ -1,12 +1,12 @@
-import typing as t
-import inspect
-from importlib import import_module
-from types import ModuleType
+from typing import Any, Optional, Type, Union, Dict, TYPE_CHECKING, Sequence, cast
 
 from dlt.common import logger
 from dlt.common.destination.capabilities import TLoaderParallelismStrategy
+from dlt.common.destination.exceptions import DestinationException
 from dlt.common.exceptions import TerminalValueError
 from dlt.common.normalizers.naming.naming import NamingConvention
+from dlt.common.reflection.exceptions import ReferenceImportError
+from dlt.common.reflection.ref import ImportTrace, callable_typechecker, object_from_ref
 from dlt.common.typing import AnyFun
 from dlt.common.destination import Destination, DestinationCapabilitiesContext, TLoaderFileFormat
 from dlt.common.configuration import known_sections, with_config, get_fun_spec
@@ -19,20 +19,32 @@ from dlt.destinations.impl.destination.configuration import (
     TDestinationCallable,
 )
 
-if t.TYPE_CHECKING:
+if TYPE_CHECKING:
     from dlt.destinations.impl.destination.destination import DestinationClient
 
 
-class DestinationInfo(t.NamedTuple):
-    """Runtime information on a discovered destination"""
+class UnknownCustomDestinationCallable(ReferenceImportError, DestinationException, KeyError):
+    def __init__(
+        self, ref: str, qualified_refs: Sequence[str], traces: Sequence[ImportTrace]
+    ) -> None:
+        self.ref = ref
+        self.qualified_refs = qualified_refs
+        super().__init__(traces=traces)
 
-    SPEC: t.Type[CustomDestinationClientConfiguration]
-    f: AnyFun
-    module: ModuleType
+    def __str__(self) -> str:
+        if "." in self.ref:
+            msg = f"Custom destination callable {self.ref} could not be imported."
 
-
-_DESTINATIONS: t.Dict[str, DestinationInfo] = {}
-"""A registry of all the decorated destinations"""
+        if len(self.qualified_refs) == 1 and self.qualified_refs[0] == self.ref:
+            pass
+        else:
+            msg += (
+                " Following fully qualified refs were tried in the registry:\n\t%s\n"
+                % "\n\t".join(self.qualified_refs)
+            )
+        if self.traces:
+            msg += super().__str__()
+        return msg
 
 
 class destination(Destination[CustomDestinationClientConfiguration, "DestinationClient"]):
@@ -48,27 +60,43 @@ class destination(Destination[CustomDestinationClientConfiguration, "Destination
         return caps
 
     @property
-    def spec(self) -> t.Type[CustomDestinationClientConfiguration]:
+    def spec(self) -> Type[CustomDestinationClientConfiguration]:
         """A spec of destination configuration resolved from the sink function signature"""
         return self._spec
 
     @property
-    def client_class(self) -> t.Type["DestinationClient"]:
+    def client_class(self) -> Type["DestinationClient"]:
         from dlt.destinations.impl.destination.destination import DestinationClient
 
         return DestinationClient
 
     def __init__(
         self,
-        destination_callable: t.Union[TDestinationCallable, str] = None,  # noqa: A003
-        destination_name: t.Optional[str] = None,
-        environment: t.Optional[str] = None,
+        destination_callable: Union[TDestinationCallable, str] = None,  # noqa: A003
+        destination_name: str = None,
+        environment: str = None,
         loader_file_format: TLoaderFileFormat = None,
         batch_size: int = 10,
         naming_convention: str = "direct",
-        spec: t.Type[CustomDestinationClientConfiguration] = None,
-        **kwargs: t.Any,
+        spec: Type[CustomDestinationClientConfiguration] = None,
+        **kwargs: Any,
     ) -> None:
+        """Configure the destination to use in a pipeline.
+
+        The dlt.destination decorator wraps this and should preferably be used.
+
+        All arguments provided here supersede other configuration sources such as environment variables and dlt config files.
+
+        Args:
+            destination_callable (Union[TDestinationCallable, str], optional): The destination callable to use.
+            destination_name (str, optional): Name of the destination, can be used in config section to differentiate between multiple of the same type
+            environment (str, optional): Environment of the destination
+            loader_file_format (TLoaderFileFormat, optional): The file format to use for the loader
+            batch_size (int, optional): The batch size to use for the loader
+            naming_convention (str, optional): The naming convention to use for the loader
+            spec (Type[CustomDestinationClientConfiguration], optional): The spec to use for the destination
+            **kwargs (Any): Additional arguments passed to the destination config
+        """
         if spec and not issubclass(spec, CustomDestinationClientConfiguration):
             raise TerminalValueError(
                 "A SPEC for a sink destination must use CustomDestinationClientConfiguration as a"
@@ -78,22 +106,13 @@ class destination(Destination[CustomDestinationClientConfiguration, "Destination
         if callable(destination_callable):
             pass
         elif destination_callable:
-            if "." not in destination_callable:
-                raise ValueError("str destination reference must be of format 'module.function'")
-            module_path, attr_name = destination_callable.rsplit(".", 1)
-            try:
-                dest_module = import_module(module_path)
-            except ModuleNotFoundError as e:
-                raise ConfigurationValueError(
-                    f"Could not find callable module at {module_path}"
-                ) from e
-            try:
-                destination_callable = getattr(dest_module, attr_name)
-            except AttributeError as e:
-                raise ConfigurationValueError(
-                    f"Could not find callable function at {destination_callable}"
-                ) from e
-
+            imported_callable, trace = object_from_ref(destination_callable, callable_typechecker)
+            if imported_callable is None:
+                raise UnknownCustomDestinationCallable(
+                    destination_callable, [destination_callable], [trace]
+                )
+            else:
+                destination_callable = imported_callable
         # provide dummy callable for cases where no callable is provided
         # this is needed for cli commands to work
         if not destination_callable:
@@ -104,11 +123,8 @@ class destination(Destination[CustomDestinationClientConfiguration, "Destination
             destination_callable = dummy_custom_destination
         elif not callable(destination_callable):
             raise ConfigurationValueError("Resolved Sink destination callable is not a callable.")
-
-        # resolve destination name
-        if destination_name is None:
-            destination_name = get_callable_name(destination_callable)
-        func_module = inspect.getmodule(destination_callable)
+        if not destination_name:
+            destination_name = destination_callable.__name__
 
         # build destination spec
         destination_sections = (known_sections.DESTINATION, destination_name)
@@ -121,15 +137,9 @@ class destination(Destination[CustomDestinationClientConfiguration, "Destination
         )
 
         # save destination in registry
-        resolved_spec = t.cast(
-            t.Type[CustomDestinationClientConfiguration], get_fun_spec(conf_callable)
+        resolved_spec = cast(
+            Type[CustomDestinationClientConfiguration], get_fun_spec(conf_callable)
         )
-        # register only standalone destinations, no inner
-        if not is_inner_callable(destination_callable):
-            _DESTINATIONS[destination_callable.__qualname__] = DestinationInfo(
-                resolved_spec, destination_callable, func_module
-            )
-
         # remember spec
         self._spec = resolved_spec or spec
         super().__init__(
@@ -148,8 +158,11 @@ class destination(Destination[CustomDestinationClientConfiguration, "Destination
         cls,
         caps: DestinationCapabilitiesContext,
         config: CustomDestinationClientConfiguration,
-        naming: t.Optional[NamingConvention],
+        naming: Optional[NamingConvention],
     ) -> DestinationCapabilitiesContext:
         caps = super().adjust_capabilities(caps, config, naming)
         caps.preferred_loader_file_format = config.loader_file_format
         return caps
+
+
+destination.register()

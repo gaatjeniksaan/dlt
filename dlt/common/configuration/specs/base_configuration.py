@@ -20,7 +20,7 @@ from typing import (
     TypeVar,
     Literal,
 )
-from typing_extensions import get_args, get_origin, dataclass_transform
+from typing_extensions import dataclass_transform
 from functools import wraps
 
 if TYPE_CHECKING:
@@ -41,6 +41,8 @@ from dlt.common.typing import (
     is_optional_type,
     is_subclass,
     is_union_type,
+    get_args,
+    get_origin,
 )
 from dlt.common.data_types import py_type_to_sc_type
 from dlt.common.configuration.exceptions import (
@@ -177,10 +179,9 @@ def configspec(
 
     All fields must have default values. This decorator will add `None` default values that miss one.
 
-    In comparison the Python dataclass, a spec implements full dictionary interface for its attributes, allows instance creation from ie. strings
+    In comparison to the Python dataclass, a spec implements full dictionary interface for its attributes, allows instance creation from ie. strings
     or other types (parsing, deserialization) and control over configuration resolution process. See `BaseConfiguration` and CredentialsConfiguration` for
     more information.
-
     """
 
     def wrap(cls: Type[TAnyClass]) -> Type[TAnyClass]:
@@ -437,8 +438,8 @@ class BaseConfiguration(MutableMapping[str, Any]):
         # call each other class_method_name. this is not at all possible as we do not know which configs in the end will
         # be mixed together.
 
-        # get base classes in order of derivation
-        mro = type.mro(type(config))
+        # get base classes in order of derivation, base classes first
+        mro = reversed(type.mro(type(config)))
         for c in mro:
             # check if this class implements on_resolved (skip pure inheritance to not do double work)
             if method_name in c.__dict__ and callable(getattr(c, method_name)):

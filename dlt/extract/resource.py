@@ -12,6 +12,8 @@ from typing import (
     Any,
     Optional,
     Mapping,
+    List,
+    Tuple,
 )
 from typing_extensions import TypeVar, Self
 
@@ -29,8 +31,12 @@ from dlt.common.pipeline import (
     pipeline_state,
 )
 from dlt.common.utils import flatten_list_or_items, get_callable_name, uniq_id
+
 from dlt.common.schema.typing import TTableSchema
-from dlt.extract.utils import wrap_async_iterator, wrap_parallel_iterator
+from dlt.extract.utils import (
+    make_schema_with_default_name,
+    wrap_parallel_iterator,
+)
 
 from dlt.extract.items import (
     DataItemWithMeta,
@@ -46,8 +52,8 @@ from dlt.extract.items_transform import (
     ItemTransformFunctionWithMeta,
 )
 from dlt.extract.pipe_iterator import ManagedPipeIterator
-from dlt.extract.pipe import Pipe, TPipeStep
-from dlt.extract.hints import DltResourceHints, HintsMeta, TResourceHints, make_hints
+from dlt.extract.pipe import Pipe
+from dlt.extract.hints import DltResourceHints, HintsMeta, TResourceHints
 from dlt.extract.incremental import Incremental, IncrementalResourceWrapper
 from dlt.extract.exceptions import (
     InvalidTransformerDataTypeGeneratorFunctionRequired,
@@ -72,7 +78,9 @@ def with_table_name(item: TDataItems, table_name: str) -> DataItemWithMeta:
 
 
 def with_hints(
-    item: TDataItems, hints: TResourceHints, create_table_variant: bool = False
+    item: TDataItems,
+    hints: TResourceHints = None,
+    create_table_variant: bool = False,
 ) -> DataItemWithMeta:
     """Marks `item` to update the resource with specified `hints`.
 
@@ -477,13 +485,16 @@ class DltResource(Iterable[TDataItem], DltResourceHints):
                     self._hints["incremental"] = incremental
 
         table_schema = super().compute_table_schema(item, meta)
-
         return table_schema
 
     def bind(self: TDltResourceImpl, *args: Any, **kwargs: Any) -> TDltResourceImpl:
         """Binds the parametrized resource to passed arguments. Modifies resource pipe in place. Does not evaluate generators or iterators."""
         if self._args_bound:
-            raise TypeError(f"Parametrized resource {self.name} is not callable")
+            raise TypeError(
+                f"Parametrized resource {self.name} is not callable. You can call and pass"
+                " arguments to a parametrized resource only once. Make sure you didn't call this"
+                " resource before."
+            )
 
         orig_gen = self._pipe.gen
         gen = self._pipe.bind_gen(*args, **kwargs)
@@ -531,7 +542,11 @@ class DltResource(Iterable[TDataItem], DltResourceHints):
     def __call__(self: TDltResourceImpl, *args: Any, **kwargs: Any) -> TDltResourceImpl:
         """Binds the parametrized resources to passed arguments. Creates and returns a bound resource. Generators and iterators are not evaluated."""
         if self._args_bound:
-            raise TypeError(f"Parametrized resource {self.name} is not callable")
+            raise TypeError(
+                f"Parametrized resource {self.name} is not callable. You can call and pass"
+                " arguments to a parametrized resource only once. Make sure you didn't call this"
+                " resource before."
+            )
         r = self._clone()
         return r.bind(*args, **kwargs)
 
@@ -551,9 +566,7 @@ class DltResource(Iterable[TDataItem], DltResourceHints):
             else:
                 return self.add_map(transform)
 
-    def __ror__(
-        self: TDltResourceImpl, data: Union[Iterable[Any], Iterator[Any]]
-    ) -> TDltResourceImpl:
+    def __ror__(self, data: Union[Iterable[Any], Iterator[Any]]) -> Self:
         """Allows to pipe data from across resources and transform functions with | operator
         This is the RIGHT side OR so the self may not be a resource and the LEFT must be an object
         that does not implement | ie. a list
@@ -605,9 +618,7 @@ class DltResource(Iterable[TDataItem], DltResourceHints):
                 return True
         return False
 
-    def _inject_config(
-        self, incremental_from_hints_override: Optional[bool] = None
-    ) -> "DltResource":
+    def _inject_config(self, incremental_from_hints_override: Optional[bool] = None) -> Self:
         """Wraps the pipe generation step in incremental and config injection wrappers and adds pipe step with
         Incremental transform.
         """
@@ -693,15 +704,15 @@ class DltResource(Iterable[TDataItem], DltResourceHints):
         else:
             default_schema_name = None
         if not default_schema_name and pipeline_name:
-            default_schema_name = pipeline._make_schema_with_default_name().name
+            default_schema_name = make_schema_with_default_name(pipeline.pipeline_name)
         return ConfigSectionContext(
             pipeline_name=pipeline_name,
             # do not emit middle config section to not overwrite the resource section
             # only sources emit middle config section
             sections=(
                 known_sections.SOURCES,
-                "",
-                self.source_name or default_schema_name or self.name,
+                self.section or pipeline_name or "",
+                self.name,
             ),
             source_state_key=self.source_name or default_schema_name or self.section or uniq_id(),
         )
@@ -784,6 +795,7 @@ class DltResource(Iterable[TDataItem], DltResourceHints):
         return 0
 
 
+# DltResource = _DltResource[Any]
 # produce Empty resource singleton
 DltResource.Empty = DltResource(Pipe(None), None, False)
 TUnboundDltResource = Callable[..., DltResource]

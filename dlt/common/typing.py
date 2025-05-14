@@ -3,10 +3,8 @@ from datetime import datetime, date  # noqa: I251
 import inspect
 import os
 from re import Pattern as _REPattern
-import sys
 from types import FunctionType
 from typing import (
-    ForwardRef,
     Callable,
     ClassVar,
     Dict,
@@ -19,8 +17,6 @@ from typing import (
     Optional,
     Tuple,
     Type,
-    TypeVar,
-    Generic,
     Protocol,
     TYPE_CHECKING,
     Union,
@@ -33,12 +29,19 @@ from typing import (
 )
 
 from typing_extensions import (
+    ForwardRef,
     Annotated,
     Never,
     ParamSpec,
     TypeAlias,
     Concatenate,
+    Unpack,
+    Self,
+    Generic,
     get_args,
+    TypeVar,
+    get_origin,
+    get_type_hints,
     get_origin,
     get_original_bases,
 )
@@ -112,7 +115,9 @@ else:
 TSecretStrValue = Annotated[str, SecretSentinel]
 
 TColumnNames = Union[str, Sequence[str]]
-"""A string representing a column name or a list of"""
+"""A string representing a column name or a sequence of"""
+TTableNames = Union[str, Sequence[str]]
+"""A string representing a table name or a sequence of"""
 TDataItem: TypeAlias = Any
 """A single data item as extracted from data source"""
 TDataItems: TypeAlias = Union[TDataItem, List[TDataItem]]
@@ -124,7 +129,9 @@ TVariantRV = Tuple[str, Any]
 VARIANT_FIELD_FORMAT = "v_%s"
 TFileOrPath = Union[str, PathLike, IO[Any]]
 TSortOrder = Literal["asc", "desc"]
-TLoaderFileFormat = Literal["jsonl", "typed-jsonl", "insert_values", "parquet", "csv", "reference"]
+TLoaderFileFormat = Literal[
+    "jsonl", "typed-jsonl", "insert_values", "parquet", "csv", "reference", "model"
+]
 """known loader file formats"""
 
 TDynHintType = TypeVar("TDynHintType")

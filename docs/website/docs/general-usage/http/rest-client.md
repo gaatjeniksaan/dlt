@@ -1,7 +1,7 @@
 ---
 title: RESTClient
 description: Learn how to use the RESTClient class to interact with RESTful APIs
-keywords: [api, http, rest, request, extract, restclient, client, pagination, json, response, data_selector, session, auth, paginator, JSONLinkPaginator, headerlinkpaginator, offsetpaginator, jsonresponsecursorpaginator, queryparampaginator, bearer, token, authentication]
+keywords: [api, http, rest, request, extract, restclient, client, pagination, json, response, data_selector, session, auth, paginator, JSONLinkPaginator, headerlinkpaginator, offsetpaginator, jsonresponsecursorpaginator, queryparampaginator, bearer, token, authentication, headercursorpaginator]
 ---
 
 The `RESTClient` class offers an interface for interacting with RESTful APIs, including features like:
@@ -109,11 +109,12 @@ Each `PageData` instance contains the data for a single page, along with context
 
 Paginators are used to handle paginated responses. The `RESTClient` class comes with built-in paginators for common pagination mechanisms:
 
-- [JSONLinkPaginator](#JSONLinkPaginator) - link to the next page is included in the JSON response.
+- [JSONLinkPaginator](#jsonlinkpaginator) - link to the next page is included in the JSON response.
 - [HeaderLinkPaginator](#headerlinkpaginator) - link to the next page is included in the response headers.
 - [OffsetPaginator](#offsetpaginator) - pagination based on offset and limit query parameters.
 - [PageNumberPaginator](#pagenumberpaginator) - pagination based on page numbers.
 - [JSONResponseCursorPaginator](#jsonresponsecursorpaginator) - pagination based on a cursor in the JSON response.
+- [HeaderCursorPaginator](#headercursorpaginator) - pagination based on a cursor in the response headers.
 
 If the API uses a non-standard pagination, you can [implement a custom paginator](#implementing-a-custom-paginator) by subclassing the `BasePaginator` class.
 
@@ -303,7 +304,10 @@ You can disable automatic stoppage of pagination by setting `stop_after_empty_pa
 **Parameters:**
 
 - `cursor_path`: A JSONPath expression pointing to the cursor in the JSON response. This cursor is used to fetch subsequent pages. Defaults to `"cursors.next"`.
-- `cursor_param`: The query parameter used to send the cursor value in the next request. Defaults to `"after"`.
+- `cursor_param`: The query parameter used to send the cursor value in the next request. Defaults to `"cursor"` if neither `cursor_param` nor `cursor_body_path` is provided.
+- `cursor_body_path`: A JSONPath expression specifying where to place the cursor in the request JSON body. Use this instead of `cursor_param` when sending the cursor in the request body.
+
+Note: You must provide either `cursor_param` or `cursor_body_path`, but not both. If neither is provided, `cursor_param` will default to `"cursor"`.
 
 **Example:**
 
@@ -318,12 +322,74 @@ Consider an API endpoint `https://api.example.com/data` returning a structure wh
 }
 ```
 
-To paginate through responses from this API, use `JSONResponseCursorPaginator` with `cursor_path` set to "cursors.next":
+To paginate through responses from this API using GET requests with query parameters, use `JSONResponseCursorPaginator` with `cursor_path` and `cursor_param`:
 
 ```py
 client = RESTClient(
     base_url="https://api.example.com",
-    paginator=JSONResponseCursorPaginator(cursor_path="cursors.next")
+    paginator=JSONResponseCursorPaginator(
+        cursor_path="cursors.next",
+        cursor_param="cursor"
+    )
+)
+```
+
+For requests with a JSON body, you can specify where to place the cursor in the request body using the `cursor_body_path` parameter:
+
+```py
+client = RESTClient(
+    base_url="https://api.example.com",
+    paginator=JSONResponseCursorPaginator(
+        cursor_path="nextPageToken",
+        cursor_body_path="nextPageToken"  # Adds cursor to root of JSON body
+    )
+)
+
+# For nested placement in JSON body
+client = RESTClient(
+    base_url="https://api.example.com",
+    paginator=JSONResponseCursorPaginator(
+        cursor_path="meta.nextToken",
+        cursor_body_path="pagination.cursor"  # Will create {"pagination": {"cursor": "token_value"}}
+    )
+)
+
+@dlt.resource
+def get_data():
+    for page in client.paginate("/search", method="POST", json={"query": "example"}):
+        yield page
+```
+
+#### HeaderCursorPaginator
+
+`HeaderCursorPaginator` handles pagination based on a cursor in the response headers.
+
+**Parameters:**
+
+- `cursor_key`: The key in the response headers that contains the cursor value. Defaults to `"next"`.
+- `cursor_param`: The query parameter used to send the cursor value in the next request. Defaults to `"cursor"`.
+
+**Example:**
+
+Consider an API endpoint `https://api.example.com/items` returning a response with a `NextPageToken` header containing the cursor for the next page:
+
+```text
+Content-Type: application/json
+NextPageToken: n3xtp4g3
+
+[
+    {"id": 1, "name": "item1"},
+    {"id": 2, "name": "item2"},
+    ...
+]
+```
+
+To paginate through responses from this API, use `HeaderCursorPaginator` with `cursor_key` set to `"NextPageToken"`:
+
+```py
+client = RESTClient(
+    base_url="https://api.example.com",
+    paginator=HeaderCursorPaginator(cursor_key="NextPageToken")
 )
 ```
 
